@@ -14,6 +14,7 @@ pub(crate) struct MazePoints {
     x_size: u32,
     y_size: u32,
     all_maze_points: HashMap<MazePoint, MazePointStatus>,
+    all_pillar_seeked_flag: bool,
     pillar_points: HashSet<MazePoint>,
 }
 impl MazePoints {
@@ -25,6 +26,11 @@ impl MazePoints {
     /// Returns the y_size of the maze.
     pub fn y_size(&self) -> u32 {
         self.y_size
+    }
+
+    /// すべての柱が探索された場合はtrueを返す。
+    pub fn all_pillar_seeked_flag(&self) -> bool {
+        self.all_pillar_seeked_flag
     }
 
     pub fn initialize_maze_points(
@@ -87,6 +93,7 @@ impl MazePoints {
             x_size,
             y_size,
             all_maze_points,
+            all_pillar_seeked_flag: false,
             pillar_points: wall_start_points,
         })))
     }
@@ -94,7 +101,7 @@ impl MazePoints {
 
 /// 1.&Arc<RwLock<MazePoints>>とWallIdentifierを引数として受け取る。
 /// 2.作業用に空のHashSetを作成する。
-/// 3.作業用のHashSetの長さがMazePointsのpillar_pointsと同じであるか確認する。同じ場合はエラーを返す。
+/// 3.作業用のHashSetの長さがMazePointsのpillar_pointsと同じであるか確認する。同じ場合は全柱探索完了フラグをセットしてエラーを返す。
 /// 4.MazePointsのpillar_pointsに格納されている値で、作業用のHashSetに存在しない値から、ランダムで1つMazePointを取得する。
 /// 5.作業用のHashSetに取得したMazePointがないことを確認する。ある場合は3からもう1度実施する。
 /// 6.取得したMazePointを作業用のHashSetに格納する。
@@ -116,7 +123,15 @@ pub fn get_random_pillar_point(
             )) as Box<dyn std::error::Error + Send + Sync>
         })?;
 
+        if maze_points_guard.all_pillar_seeked_flag {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "All pillar points have already been sought",
+            )));
+        }
+
         if work_set.len() == maze_points_guard.pillar_points.len() {
+            maze_points_guard.all_pillar_seeked_flag = true;
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "No more pillar points available",
@@ -163,7 +178,7 @@ pub fn get_random_pillar_point(
                     point.clone(),
                     MazePointStatus::Wall(
                         WallType::Pillar(PillarExtendStatus::InProgress),
-                        identifier,
+                        Some(identifier),
                     ),
                 );
                 return Ok(point);
@@ -192,6 +207,13 @@ pub fn change_pillar_status_from_in_progress_to_extended(
         )) as Box<dyn std::error::Error + Send + Sync>
     })?;
 
+    if maze_points_guard.all_pillar_seeked_flag {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "All pillar points have already been sought",
+        )));
+    }
+
     if !maze_points_guard.pillar_points.contains(&point) {
         return Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -202,7 +224,7 @@ pub fn change_pillar_status_from_in_progress_to_extended(
     // 修正: cloned()を使用
     if let Some(status) = maze_points_guard.all_maze_points.get(&point).cloned() {
         if let MazePointStatus::Wall(WallType::Pillar(extend_status), id) = status {
-            if extend_status == PillarExtendStatus::InProgress && id == identifier {
+            if extend_status == PillarExtendStatus::InProgress && id == Some(identifier) {
                 maze_points_guard.all_maze_points.insert(
                     point,
                     MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::Extended), id),
@@ -231,7 +253,7 @@ pub fn change_pillar_status_from_in_progress_to_extended(
 /// 1.&Arc<RwLock<MazePoints>>とMazePointとWallIdentifierを引数として受け取る。
 /// 2.取得したMazePointがMazePointsのpillar_pointsに含まれているか確認する。含まれていない場合は処理を終了する。
 /// 3.取得したMazePointに対応するall_maze_pointsの値がMazePointStatusがWallでWallTypeがPillarで、PillarExtendStatusがInProgressで、WallIdentifierが引数として取得した値と同じであるか確認する。当てはまらない場合は処理を終了する。
-/// 4.PillarExtendStatusがInProgressの値をNotCheckedに変更する。このとき、WallIdentifier::new("NotChecked".to_string())をセットする。
+/// 4.PillarExtendStatusがInProgressの値をNotCheckedに変更する。
 pub fn change_pillar_status_from_in_progress_to_not_checked(
     maze_points: &Arc<RwLock<MazePoints>>,
     point: MazePoint,
@@ -244,6 +266,13 @@ pub fn change_pillar_status_from_in_progress_to_not_checked(
         )) as Box<dyn std::error::Error + Send + Sync>
     })?;
 
+    if maze_points_guard.all_pillar_seeked_flag {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "All pillar points have already been sought",
+        )));
+    }
+
     if !maze_points_guard.pillar_points.contains(&point) {
         return Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -254,13 +283,10 @@ pub fn change_pillar_status_from_in_progress_to_not_checked(
     if let Some(MazePointStatus::Wall(WallType::Pillar(extend_status), id)) =
         maze_points_guard.all_maze_points.get(&point)
     {
-        if *extend_status == PillarExtendStatus::InProgress && *id == identifier {
+        if *extend_status == PillarExtendStatus::InProgress && *id == Some(identifier) {
             maze_points_guard.all_maze_points.insert(
                 point.clone(),
-                MazePointStatus::Wall(
-                    WallType::Pillar(PillarExtendStatus::NotChecked),
-                    WallIdentifier::new("NotChecked".to_string()),
-                ),
+                MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::NotChecked), None),
             );
             Ok(())
         } else {
