@@ -4,12 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = { version = "4.0", features = ["derive"] }
-log = "0.4"
-env_logger = "0.11"
+log = "0.4.27"
+env_logger = "0.11.8"
 rand = "0.9.2"
-chrono = "0.4.41"
+threadpool = "1.8"
+clap = { version = "4.5.43", features = ["derive"] }
 image = "0.25.6"
-num_cpus = "1.17.0"
-threadpool = "1.8.1"
-sysinfo = "0.36.1"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3.8"

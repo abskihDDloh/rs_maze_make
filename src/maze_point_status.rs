@@ -44,98 +44,32 @@ pub enum PillarExtendStatus {
     /// 拡張された柱
     Extended,
 }
-impl PillarExtendStatus {
-    pub fn is_not_checked(&self) -> bool {
-        matches!(self, PillarExtendStatus::NotChecked)
-    }
-
-    pub fn is_in_progress(&self) -> bool {
-        matches!(self, PillarExtendStatus::InProgress)
-    }
-
-    pub fn is_extended(&self) -> bool {
-        matches!(self, PillarExtendStatus::Extended)
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WallType {
-    ///外壁
+    /// 外壁
     Outside,
-    ///柱
+    /// 柱
     Pillar(PillarExtendStatus),
-    ///生成された壁
+    /// 生成された壁
     Wall,
-    ///新しい候補壁
-    CandidateWall,
-}
-impl WallType {
-    pub fn is_pillar(&self) -> bool {
-        matches!(self, WallType::Pillar(_))
-    }
-
-    pub fn is_outside(&self) -> bool {
-        matches!(self, WallType::Outside)
-    }
-
-    pub fn is_wall(&self) -> bool {
-        matches!(self, WallType::Wall)
-    }
-
-    pub fn is_candidate_wall(&self) -> bool {
-        matches!(self, WallType::CandidateWall)
-    }
-
-    pub fn get_wall_extens_status(&self) -> Option<&PillarExtendStatus> {
-        match self {
-            WallType::Pillar(status) => Some(status),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MazePointStatus {
-    ///通路
+    /// 通路
     Path,
-    ///壁
+    /// 壁
     Wall(WallType, Option<WallIdentifier>),
 }
 
 impl MazePointStatus {
-    /// new_wall()に設定する識別子を生成する。
-    pub fn new_identifier() -> WallIdentifier {
-        WallIdentifier::new()
-    }
-
     pub fn new_outside_wall(identifier: WallIdentifier) -> Self {
         MazePointStatus::Wall(WallType::Outside, Some(identifier))
     }
 
     pub fn new_notchecked_pillar() -> Self {
         MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::NotChecked), None)
-    }
-
-    pub fn is_path(&self) -> bool {
-        matches!(self, MazePointStatus::Path)
-    }
-
-    pub fn is_wall(&self) -> bool {
-        matches!(self, MazePointStatus::Wall(_, _))
-    }
-
-    pub fn get_wall_type(&self) -> Option<&WallType> {
-        match self {
-            MazePointStatus::Path => None,
-            MazePointStatus::Wall(wall_type, _) => Some(wall_type),
-        }
-    }
-
-    pub fn get_wall_identifier(&self) -> Option<WallIdentifier> {
-        match self {
-            MazePointStatus::Path => None,
-            MazePointStatus::Wall(_wall_type, identifier) => identifier.clone(),
-        }
     }
 }
 
@@ -146,8 +80,8 @@ mod tests {
     #[test]
     fn test_maze_point_status_path() {
         let status = MazePointStatus::Path;
-        assert!(status.is_path());
-        assert!(!status.is_wall());
+        assert!(matches!(status, MazePointStatus::Path));
+        assert!(!matches!(status, MazePointStatus::Wall(_, _)));
     }
 
     #[test]
@@ -169,8 +103,8 @@ mod tests {
         let identifier = WallIdentifier::new();
         let status = MazePointStatus::new_outside_wall(identifier.clone());
 
-        assert!(status.is_wall());
-        assert!(!status.is_path());
+        assert!(matches!(status, MazePointStatus::Wall(_, _)));
+        assert!(!matches!(status, MazePointStatus::Path));
 
         match status {
             MazePointStatus::Wall(WallType::Outside, Some(id)) => {
@@ -193,74 +127,48 @@ mod tests {
     }
 
     #[test]
-    fn test_pillar_extend_status_checks() {
+    fn test_pillar_extend_status_direct_matching() {
         let not_checked = PillarExtendStatus::NotChecked;
         let in_progress = PillarExtendStatus::InProgress;
         let extended = PillarExtendStatus::Extended;
 
-        assert!(not_checked.is_not_checked());
-        assert!(!not_checked.is_in_progress());
-        assert!(!not_checked.is_extended());
+        // 直接パターンマッチングでテスト
+        assert!(matches!(not_checked, PillarExtendStatus::NotChecked));
+        assert!(!matches!(not_checked, PillarExtendStatus::InProgress));
+        assert!(!matches!(not_checked, PillarExtendStatus::Extended));
 
-        assert!(!in_progress.is_not_checked());
-        assert!(in_progress.is_in_progress());
-        assert!(!in_progress.is_extended());
+        assert!(!matches!(in_progress, PillarExtendStatus::NotChecked));
+        assert!(matches!(in_progress, PillarExtendStatus::InProgress));
+        assert!(!matches!(in_progress, PillarExtendStatus::Extended));
 
-        assert!(!extended.is_not_checked());
-        assert!(!extended.is_in_progress());
-        assert!(extended.is_extended());
+        assert!(!matches!(extended, PillarExtendStatus::NotChecked));
+        assert!(!matches!(extended, PillarExtendStatus::InProgress));
+        assert!(matches!(extended, PillarExtendStatus::Extended));
     }
 
     #[test]
-    fn test_wall_type_methods() {
+    fn test_wall_type_direct_matching() {
         let outside = WallType::Outside;
         let pillar = WallType::Pillar(PillarExtendStatus::NotChecked);
         let wall = WallType::Wall;
-        let candidate = WallType::CandidateWall;
 
-        assert!(outside.is_outside());
-        assert!(!outside.is_pillar());
-        assert!(!outside.is_wall());
-        assert!(!outside.is_candidate_wall());
+        // 直接パターンマッチングでテスト
+        assert!(matches!(outside, WallType::Outside));
+        assert!(!matches!(outside, WallType::Pillar(_)));
+        assert!(!matches!(outside, WallType::Wall));
 
-        assert!(pillar.is_pillar());
-        assert!(!pillar.is_outside());
-        assert!(!pillar.is_wall());
-        assert!(!pillar.is_candidate_wall());
-        assert!(pillar.get_wall_extens_status().is_some());
-        assert_eq!(
-            *pillar.get_wall_extens_status().unwrap(),
-            PillarExtendStatus::NotChecked
-        );
+        assert!(matches!(pillar, WallType::Pillar(_)));
+        assert!(!matches!(pillar, WallType::Outside));
+        assert!(!matches!(pillar, WallType::Wall));
 
-        assert!(wall.is_wall());
-        assert!(!wall.is_pillar());
-        assert!(!wall.is_outside());
-        assert!(!wall.is_candidate_wall());
+        // Pillarの内部状態もテスト
+        if let WallType::Pillar(status) = pillar {
+            assert!(matches!(status, PillarExtendStatus::NotChecked));
+        }
 
-        assert!(candidate.is_candidate_wall());
-        assert!(!candidate.is_pillar());
-        assert!(!candidate.is_outside());
-        assert!(!candidate.is_wall());
-    }
-
-    #[test]
-    fn test_maze_point_status_get_methods() {
-        let path = MazePointStatus::Path;
-        assert!(path.get_wall_type().is_none());
-        assert!(path.get_wall_identifier().is_none());
-
-        let identifier = WallIdentifier::new();
-        let wall_status = MazePointStatus::Wall(WallType::Outside, Some(identifier.clone()));
-
-        assert!(wall_status.get_wall_type().is_some());
-        assert_eq!(*wall_status.get_wall_type().unwrap(), WallType::Outside);
-
-        assert!(wall_status.get_wall_identifier().is_some());
-        assert_eq!(
-            wall_status.get_wall_identifier().unwrap().as_str(),
-            identifier.as_str()
-        );
+        assert!(matches!(wall, WallType::Wall));
+        assert!(!matches!(wall, WallType::Pillar(_)));
+        assert!(!matches!(wall, WallType::Outside));
     }
 
     #[test]
@@ -281,11 +189,149 @@ mod tests {
     }
 
     #[test]
-    fn test_new_identifier_method() {
-        let identifier1 = MazePointStatus::new_identifier();
-        let identifier2 = MazePointStatus::new_identifier();
+    fn test_pillar_status_transitions() {
+        let identifier = WallIdentifier::new();
 
-        // 異なる識別子が生成されることを確認
-        assert_ne!(identifier1.as_str(), identifier2.as_str());
+        // NotChecked → InProgress
+        let not_checked =
+            MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::NotChecked), None);
+        let in_progress = MazePointStatus::Wall(
+            WallType::Pillar(PillarExtendStatus::InProgress),
+            Some(identifier.clone()),
+        );
+
+        // InProgress → Extended
+        let extended = MazePointStatus::Wall(
+            WallType::Pillar(PillarExtendStatus::Extended),
+            Some(identifier.clone()),
+        );
+
+        // 各状態の確認
+        match not_checked {
+            MazePointStatus::Wall(WallType::Pillar(status), _) => {
+                assert!(matches!(status, PillarExtendStatus::NotChecked));
+            }
+            _ => panic!("Expected NotChecked pillar"),
+        }
+
+        match in_progress {
+            MazePointStatus::Wall(WallType::Pillar(status), _) => {
+                assert!(matches!(status, PillarExtendStatus::InProgress));
+            }
+            _ => panic!("Expected InProgress pillar"),
+        }
+
+        match extended {
+            MazePointStatus::Wall(WallType::Pillar(status), _) => {
+                assert!(matches!(status, PillarExtendStatus::Extended));
+            }
+            _ => panic!("Expected Extended pillar"),
+        }
+    }
+
+    #[test]
+    fn test_all_wall_types() {
+        let outside = WallType::Outside;
+        let pillar = WallType::Pillar(PillarExtendStatus::NotChecked);
+        let wall = WallType::Wall;
+
+        // Outside型のテスト
+        assert!(matches!(outside, WallType::Outside));
+        assert!(!matches!(outside, WallType::Pillar(_)));
+        assert!(!matches!(outside, WallType::Wall));
+
+        // Pillar型のテスト
+        assert!(!matches!(pillar, WallType::Outside));
+        assert!(matches!(pillar, WallType::Pillar(_)));
+        assert!(!matches!(pillar, WallType::Wall));
+
+        // Wall型のテスト
+        assert!(!matches!(wall, WallType::Outside));
+        assert!(!matches!(wall, WallType::Pillar(_)));
+        assert!(matches!(wall, WallType::Wall));
+    }
+
+    #[test]
+    fn test_maze_point_status_wall_variants() {
+        let identifier = WallIdentifier::new();
+
+        // 各種壁タイプのMazePointStatusをテスト
+        let outside_wall = MazePointStatus::Wall(WallType::Outside, Some(identifier.clone()));
+        let pillar_wall =
+            MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::NotChecked), None);
+        let normal_wall = MazePointStatus::Wall(WallType::Wall, Some(identifier.clone()));
+
+        // 全てwall判定されることを確認
+        assert!(matches!(outside_wall, MazePointStatus::Wall(_, _)));
+        assert!(matches!(pillar_wall, MazePointStatus::Wall(_, _)));
+        assert!(matches!(normal_wall, MazePointStatus::Wall(_, _)));
+
+        // 全てpath判定されないことを確認
+        assert!(!matches!(outside_wall, MazePointStatus::Path));
+        assert!(!matches!(pillar_wall, MazePointStatus::Path));
+        assert!(!matches!(normal_wall, MazePointStatus::Path));
+
+        // 各wall_typeが正しく取得できることを確認
+        assert!(matches!(
+            outside_wall,
+            MazePointStatus::Wall(WallType::Outside, _)
+        ));
+        assert!(matches!(
+            pillar_wall,
+            MazePointStatus::Wall(WallType::Pillar(_), _)
+        ));
+        assert!(matches!(
+            normal_wall,
+            MazePointStatus::Wall(WallType::Wall, _)
+        ));
+    }
+
+    #[test]
+    fn test_wall_identifier_format() {
+        let identifier = WallIdentifier::new();
+        let id_str = identifier.as_str();
+
+        // 形式の確認: "ThreadId(...)" + "_" + 数字
+        assert!(id_str.starts_with("ThreadId("));
+        assert!(id_str.contains("_"));
+
+        // アンダースコア以降が数字であることを確認
+        if let Some(pos) = id_str.rfind('_') {
+            let time_part = &id_str[pos + 1..];
+            assert!(
+                time_part.parse::<i64>().is_ok(),
+                "Time part should be a valid number"
+            );
+        } else {
+            panic!("Identifier should contain underscore");
+        }
+    }
+
+    #[test]
+    fn test_maze_point_status_matches() {
+        let path = MazePointStatus::Path;
+        let identifier = WallIdentifier::new();
+        let wall = MazePointStatus::Wall(WallType::Outside, Some(identifier));
+
+        // Path状態のテスト
+        match path {
+            MazePointStatus::Path => {
+                // 正常
+            }
+            MazePointStatus::Wall(_, _) => {
+                panic!("Expected Path status");
+            }
+        }
+
+        // Wall状態のテスト
+        match wall {
+            MazePointStatus::Path => {
+                panic!("Expected Wall status");
+            }
+            MazePointStatus::Wall(wall_type, id) => {
+                assert!(matches!(wall_type, WallType::Outside));
+                assert!(id.is_some());
+            }
+        }
     }
 }

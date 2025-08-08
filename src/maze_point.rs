@@ -1,4 +1,4 @@
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 ///迷路内のXY座標を表す構造体。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
