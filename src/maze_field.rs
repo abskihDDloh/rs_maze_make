@@ -9,34 +9,79 @@ use crate::{
 };
 use rand::Rng;
 
+/// 迷路の構成要素とその状態を管理する構造体
+///
+/// この構造体は迷路の各座標点の状態（道、壁、柱）を管理し、
+/// 迷路生成アルゴリズムの進行状況を追跡します。
 #[derive(Debug, Clone)]
 pub(crate) struct MazePoints {
-    ///迷路のX方向の大きさ。
+    /// 迷路のX方向の大きさ
     x_size: u32,
-    ///迷路のY方向の大きさ。
+    /// 迷路のY方向の大きさ
     y_size: u32,
+    /// 迷路の全座標点とその状態のマッピング
     all_maze_points: HashMap<MazePoint, MazePointStatus>,
-    ///全柱探索完了フラグ
+    /// 全柱探索完了フラグ
+    /// すべての柱が探索済みの場合にtrueになる
     all_pillar_seeked_flag: bool,
-    ///迷路の柱(壁の生成起点)の座標
+    /// 迷路の柱（壁の生成起点）の座標集合
+    /// 境界に接していない内部の偶数座標のみが含まれる
     pillar_points: HashSet<MazePoint>,
 }
+
 impl MazePoints {
-    /// Returns the x_size of the maze.
+    /// 迷路のX方向の大きさを返す
+    ///
+    /// # Returns
+    ///
+    /// 迷路のX方向の大きさ
     pub fn x_size(&self) -> u32 {
         self.x_size
     }
 
-    /// Returns the y_size of the maze.
+    /// 迷路のY方向の大きさを返す
+    ///
+    /// # Returns
+    ///
+    /// 迷路のY方向の大きさ
     pub fn y_size(&self) -> u32 {
         self.y_size
     }
 
-    /// すべての柱が探索された場合はtrueを返す。
+    /// すべての柱が探索された場合はtrueを返す
+    ///
+    /// # Returns
+    ///
+    /// すべての柱が探索済みの場合はtrue、そうでなければfalse
     pub fn all_pillar_seeked_flag(&self) -> bool {
         self.all_pillar_seeked_flag
     }
 
+    /// 迷路データを初期化し、スレッドセーフなラッパーで返す
+    ///
+    /// この関数は指定されたサイズの迷路を初期化します。迷路の境界は外壁で囲まれ、
+    /// 内部の偶数座標には柱が配置されます。残りの座標は通路として初期化されます。
+    ///
+    /// # Arguments
+    ///
+    /// * `x_size` - 迷路のX方向の大きさ（5以上の奇数である必要があります）
+    /// * `y_size` - 迷路のY方向の大きさ（5以上の奇数である必要があります）
+    ///
+    /// # Returns
+    ///
+    /// 初期化された迷路データのスレッドセーフなラッパー、またはエラー
+    ///
+    /// # Errors
+    ///
+    /// * サイズが5未満の場合
+    /// * サイズが偶数の場合
+    /// * サイズがi32の範囲を超える場合
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// let maze_points = MazePoints::initialize_maze_points(7, 7)?;
+    /// ```
     pub fn initialize_maze_points(
         x_size: u32,
         y_size: u32,
@@ -103,15 +148,34 @@ impl MazePoints {
     }
 }
 
-/// 1.&Arc<RwLock<MazePoints>>とWallIdentifierを引数として受け取る。
-/// 2.作業用に空のHashSetを作成する。
-/// 3.作業用のHashSetの長さがMazePointsのpillar_pointsと同じであるか確認する。同じ場合は全柱探索完了フラグをセットしてエラーを返す。
-/// 4.MazePointsのpillar_pointsに格納されている値で、作業用のHashSetに存在しない値から、ランダムで1つMazePointを取得する。
-/// 5.作業用のHashSetに取得したMazePointがないことを確認する。ある場合は3からもう1度実施する。
-/// 6.取得したMazePointを作業用のHashSetに格納する。
-/// 7.取得したMazePointに対応するall_maze_pointsの値がMazePointStatusがWallでWallTypeがPillarで、PillarExtendStatusがNotCheckedであるか確認する。NotCheckedではない場合は3からもう1度実施する。
-/// 8.PillarExtendStatusがNotCheckedの場合は、PillarExtendStatusをInProgressに変更する。
-/// 9.取得したMazePointを返す。
+/// 迷路生成の開始点となる柱をランダムに選択する
+///
+/// この関数は利用可能な柱（NotChecked状態）の中からランダムに1つを選択し、
+/// InProgress状態に変更してから返します。スレッドセーフな操作を行い、
+/// 複数のスレッドから同時にアクセスされても安全です。
+///
+/// # Arguments
+///
+/// * `maze_points` - 迷路データへの参照
+/// * `identifier` - 壁の識別子
+///
+/// # Returns
+///
+/// 選択された柱の座標、またはエラー
+///
+/// # Errors
+///
+/// * すべての柱が既に探索済みの場合
+/// * 利用可能な柱が見つからない場合
+/// * ロックの取得に失敗した場合
+///
+/// # Examples
+///
+/// ```rust
+/// let maze_points = MazePoints::initialize_maze_points(7, 7)?;
+/// let identifier = WallIdentifier::new();
+/// let start_pillar = select_start_pillar_point(&maze_points, identifier)?;
+/// ```
 pub fn select_start_pillar_point(
     maze_points: &Arc<RwLock<MazePoints>>,
     identifier: WallIdentifier,
@@ -195,42 +259,109 @@ pub fn select_start_pillar_point(
     }
 }
 
+/// 隣接する柱への拡張操作の結果状態を表すenum
+///
+/// この列挙型は柱から隣接する柱への拡張試行の結果を示します。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum SeekAdjacentPillarOkState {
+    /// 隣接する柱が見つかり、拡張に成功した場合
     NextPillar,
+    /// 境界（Outside壁）に到達し、これ以上拡張できない場合
     Outside,
 }
 
+/// 隣接する柱への拡張操作の結果を表す構造体
+///
+/// この構造体は柱から隣接する柱への拡張操作の結果を保持します。
+/// 操作の結果状態と、対象となった座標点を含みます。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SeekAdjacentPillarOkResult {
+    /// 操作の結果状態
     state: SeekAdjacentPillarOkState,
-    point: MazePoint,
+    /// 対象となった座標点
+    /// NextPillarの場合は選択された隣接柱の座標、Outsideの場合は到達した境界の座標
+    pub point: MazePoint,
 }
+
 impl SeekAdjacentPillarOkResult {
+    /// 新しい結果インスタンスを作成する
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - 操作の結果状態
+    /// * `point` - 対象となった座標点
+    ///
+    /// # Returns
+    ///
+    /// 新しい結果インスタンス
     pub(crate) fn new(state: SeekAdjacentPillarOkState, point: MazePoint) -> Self {
         Self { state, point }
     }
+
+    /// 結果が「隣接する柱が見つかった」かどうかを判定する
+    ///
+    /// # Returns
+    ///
+    /// 隣接する柱が見つかった場合はtrue、そうでなければfalse
     pub fn is_next_pillar(&self) -> bool {
         matches!(self.state, SeekAdjacentPillarOkState::NextPillar)
     }
+
+    /// 結果が「境界に到達した」かどうかを判定する
+    ///
+    /// # Returns
+    ///
+    /// 境界に到達した場合はtrue、そうでなければfalse
     pub fn is_outside(&self) -> bool {
         matches!(self.state, SeekAdjacentPillarOkState::Outside)
     }
 }
 
-/// 1.&Arc<RwLock<MazePoints>>とMazePointとWallIdentifierを引数として受け取る。
-/// 2.MazePointsのall_pillar_seeked_flagがtrueであればエラーを返す。
-/// 3.引数として受け取ったMazePointに対応するall_maze_pointsの値がMazePointStatusがWallでWallTypeがPillarで、PillarExtendStatusがInProgressで、WallIdentifierが引数で受け取った値と等しいことを確認する。どれか違っていたらエラーを返す。
-/// 4.引数として受け取ったMazePoint(柱)に隣接する柱のMazePointを格納する作業用Vecを生成する。
-/// 5.引数として受け取ったMazePointとyが等しく、xが+-2のMazePointを作業用Vecに格納する。
-/// 6.引数として受け取ったMazePointとxが等しく、yが+-2のMazePointを作業用Vecに格納する。
-/// 7.作業用Vecの長さが4であることを確認する。
-/// 8.作業用Vecに格納されたMazePointをランダムで1つ選択する。
-/// 9.作業用Vecに格納されたMazePointに対応するall_maze_pointsの値のMazePointStatusがOutsideかWallであるか確認する。Wallの場合はWallTypeがPillarで、PillarExtendStatusがNotCheckedであるか確認する。違う場合はそのMazePointを作業用Vecから削除して8からやり直す。
-/// 10.作業用Vecの要素数が0になった場合はエラーを返す。
-/// 11.引数として受け取ったMazePointと作業用Vecから選択したMazePointに挟まれたMazePointに対応するall_maze_pointsの値がPathであれば、CandidateWallに変更する。
-/// 12.引数として受け取ったMazePointに対応するall_maze_pointsの値のPillarExtendStatusを値をExtendedに変更する。また、作業用Vecから選択したMazePointに対応するall_maze_pointsの値のPillarExtendStatusを値をInProgressに変更する。
-/// 13.作業用Vecから選択したMazePointに対応するall_maze_pointsの値のMazePointStatusがOutsideであればエラーを返す。Wallであれば選択したMazePointを返す。
+/// 柱から隣接する柱への拡張を試行する
+///
+/// この関数は指定された柱（InProgress状態）から隣接する利用可能な柱への拡張を試行します。
+/// 成功した場合、元の柱はExtended状態になり、選択された隣接柱はInProgress状態になります。
+/// また、両柱の間の座標点はCandidateWall状態に変更されます。
+///
+/// 隣接する柱の候補は距離2の位置（上下左右）にある座標点で、以下の条件を満たすもの：
+/// - NotChecked状態の柱
+/// - Outside壁（境界）
+///
+/// 中間点（両柱の中点）はPath状態である必要があり、拡張時にCandidateWall状態に変更されます。
+///
+/// # Arguments
+///
+/// * `maze_points` - 迷路データへの参照
+/// * `pillar_point` - 拡張元の柱の座標（InProgress状態である必要があります）
+/// * `identifier` - 壁の識別子（元の柱の識別子と一致する必要があります）
+///
+/// # Returns
+///
+/// 拡張操作の結果。成功した場合は隣接柱の座標または境界到達を示す結果、失敗した場合はエラー
+///
+/// # Errors
+///
+/// * 全柱探索が完了している場合
+/// * 指定された柱がInProgress状態でない場合
+/// * 識別子が一致しない場合
+/// * 中間点がPath状態でない場合
+/// * 利用可能な隣接柱が見つからない場合
+/// * ロックの取得に失敗した場合
+///
+/// # Examples
+///
+/// ```rust
+/// let maze_points = MazePoints::initialize_maze_points(7, 7)?;
+/// let identifier = WallIdentifier::new();
+/// let start_pillar = select_start_pillar_point(&maze_points, identifier.clone())?;
+/// let result = extend_pillar_to_adjacent_pillar(&maze_points, start_pillar, identifier)?;
+///
+/// if result.is_next_pillar() {
+///     println!("Next pillar found at: {:?}", result.point);
+/// } else if result.is_outside() {
+///     println!("Reached boundary at: {:?}", result.point);
+/// }
+/// ```
 pub fn extend_pillar_to_adjacent_pillar(
     maze_points: &Arc<RwLock<MazePoints>>,
     pillar_point: MazePoint,
@@ -893,18 +1024,14 @@ mod tests {
         let point = MazePoint::new(2, 2);
 
         // NEXT_PILLARのテスト
-        let next_pillar = SeekAdjacentPillarOkResult::new(
-            SeekAdjacentPillarOkState::NextPillar,
-            point.clone(),
-        );
+        let next_pillar =
+            SeekAdjacentPillarOkResult::new(SeekAdjacentPillarOkState::NextPillar, point.clone());
         assert!(next_pillar.is_next_pillar());
         assert!(!next_pillar.is_outside());
 
         // OUTSIDEのテスト
-        let outside = SeekAdjacentPillarOkResult::new(
-            SeekAdjacentPillarOkState::Outside,
-            point.clone(),
-        );
+        let outside =
+            SeekAdjacentPillarOkResult::new(SeekAdjacentPillarOkState::Outside, point.clone());
         assert!(!outside.is_next_pillar());
         assert!(outside.is_outside());
     }
@@ -931,7 +1058,7 @@ mod tests {
         assert!(result.is_ok());
 
         let seek_result = result.unwrap();
-        
+
         // 結果に関係なく、pointフィールドにアクセスできることを確認
         let _returned_point = seek_result.point;
         // pointは結果の状態に応じて適切な値が設定されている
