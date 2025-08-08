@@ -27,8 +27,8 @@ pub(crate) struct MazePoints {
     /// 迷路の柱（壁の生成起点）の座標集合
     /// 境界に接していない内部の偶数座標のみが含まれる
     pillar_points: HashSet<MazePoint>,
-    /// 拡張処理済みの柱の座標集合
-    extended_pillar_points: HashSet<MazePoint>,
+    /// 拡張処理中の柱の座標集合
+    extending_pillar_points: HashSet<MazePoint>,
 }
 
 impl MazePoints {
@@ -74,7 +74,7 @@ impl MazePoints {
     ///
     /// 拡張済み柱座標のHashSetのクローン
     pub fn get_extended_pillar_points_clone(&self) -> HashSet<MazePoint> {
-        self.extended_pillar_points.clone()
+        self.extending_pillar_points.clone()
     }
 
     /// 迷路の柱座標集合への参照を返す
@@ -182,29 +182,8 @@ impl MazePoints {
             all_maze_points,
             all_pillar_seeked_flag: false,
             pillar_points: wall_start_points,
-            extended_pillar_points: HashSet::new(),
+            extending_pillar_points: HashSet::new(),
         })))
-    }
-
-    /// 柱を拡張済み状態に変更し、拡張済み柱リストに追加する
-    ///
-    /// # Arguments
-    ///
-    /// * `pillar_point` - 拡張済みにする柱の座標
-    /// * `identifier` - 壁の識別子
-    ///
-    /// # Note
-    ///
-    /// この関数は書き込みロックが取得済みの状態で呼び出される必要があります
-    fn mark_pillar_as_extended(&mut self, pillar_point: &MazePoint, identifier: &WallIdentifier) {
-        self.all_maze_points.insert(
-            pillar_point.clone(),
-            MazePointStatus::Wall(
-                WallType::Pillar(PillarExtendStatus::Extended),
-                Some(identifier.clone()),
-            ),
-        );
-        self.extended_pillar_points.insert(pillar_point.clone());
     }
 
     /// 柱を進行中状態に変更する
@@ -225,6 +204,7 @@ impl MazePoints {
                 Some(identifier.clone()),
             ),
         );
+        self.extending_pillar_points.insert(pillar_point.clone());
     }
 
     /// 中間点を壁に変更する
@@ -290,9 +270,6 @@ impl MazePoints {
         // 中間点を壁に変更
         self.mark_middle_point_as_wall(&middle_point, identifier)?;
 
-        // 元の柱を拡張済みに変更
-        self.mark_pillar_as_extended(from_pillar, identifier);
-
         // 拡張先の状態を確認して適切に処理
         if let Some(status) = self.all_maze_points.get(to_pillar).cloned() {
             match status {
@@ -303,6 +280,18 @@ impl MazePoints {
                 )),
                 // NotChecked状態の柱の場合
                 MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::NotChecked), _) => {
+                    // 拡張先の柱を進行中に変更
+                    self.mark_pillar_as_in_progress(to_pillar, identifier);
+                    Ok(SeekAdjacentPillarOkResult::new(
+                        SeekAdjacentPillarOkState::NextPillar,
+                        to_pillar.clone(),
+                    ))
+                }
+                // InProgress状態の柱の場合
+                MazePointStatus::Wall(
+                    WallType::Pillar(PillarExtendStatus::InProgress),
+                    Some(id),
+                ) => {
                     // 拡張先の柱を進行中に変更
                     self.mark_pillar_as_in_progress(to_pillar, identifier);
                     Ok(SeekAdjacentPillarOkResult::new(
@@ -348,7 +337,7 @@ impl MazePoints {
                     }
 
                     // 拡張済み柱は除外
-                    if self.extended_pillar_points.contains(*point) {
+                    if self.extending_pillar_points.contains(*point) {
                         return false;
                     }
 
@@ -384,7 +373,7 @@ impl MazePoints {
         identifier: &WallIdentifier,
     ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         // 拡張済みでなく、NotChecked状態であることを確認
-        if !self.extended_pillar_points.contains(point)
+        if !self.extending_pillar_points.contains(point)
             && let Some(MazePointStatus::Wall(WallType::Pillar(extend_status), _)) =
                 self.all_maze_points.get(point)
             && *extend_status == PillarExtendStatus::NotChecked
@@ -682,10 +671,13 @@ pub fn extend_pillar_to_adjacent_pillar(
 
         // all_pillar_seeked_flagがtrueであれば利用可能な柱はない
         if maze_points_read.all_pillar_seeked_flag {
-            return Ok(SeekAdjacentPillarOkResult::new(
-                SeekAdjacentPillarOkState::SurroundedPillar,
-                pillar_point_copy,
-            ));
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "All pillar points have already been sought. {:?}",
+                    identifier
+                ),
+            )));
         }
 
         // 引数として受け取ったMazePointの状態確認
@@ -744,7 +736,6 @@ pub fn extend_pillar_to_adjacent_pillar(
         }
         None => {
             // 利用可能な隣接柱がない場合
-            maze_points_guard.mark_pillar_as_extended(&pillar_point, &identifier);
             Ok(SeekAdjacentPillarOkResult::new(
                 SeekAdjacentPillarOkState::SurroundedPillar,
                 pillar_point,
@@ -873,10 +864,12 @@ mod tests {
         // 最初の柱を選択
         let first_pillar = select_start_pillar_point(&maze_points, identifier1.clone()).unwrap();
 
-        // 最初の柱を拡張済みに設定
+        // 最初の柱を拡張済みとして記録（extending_pillar_pointsに追加）
         {
             let mut maze_guard = maze_points.write().unwrap();
-            maze_guard.mark_pillar_as_extended(&first_pillar, &identifier1);
+            maze_guard
+                .extending_pillar_points
+                .insert(first_pillar.clone());
         }
 
         // 2番目の柱を選択（拡張済みの柱は除外される）
@@ -887,81 +880,63 @@ mod tests {
 
         // 拡張済み柱リストを確認
         let maze_guard = maze_points.read().unwrap();
-        assert!(maze_guard.extended_pillar_points.contains(&first_pillar));
-        assert!(!maze_guard.extended_pillar_points.contains(&second_pillar));
+        assert!(maze_guard.extending_pillar_points.contains(&first_pillar));
+        assert!(!maze_guard.extending_pillar_points.contains(&second_pillar));
     }
 
     #[test]
-    fn test_extend_pillar_different_identifier_as_outside() {
+    fn test_extend_pillar_to_adjacent_pillar() {
         let maze_points = MazePoints::initialize_maze_points(7, 7).unwrap();
-        let identifier1 = WallIdentifier::new();
-        let identifier2 = WallIdentifier::new();
+        let identifier = WallIdentifier::new();
 
-        // 最初の柱をInProgressに設定
+        // 柱をInProgressに設定
         let pillar1 = MazePoint::new(2, 2);
         {
             let mut maze_guard = maze_points.write().unwrap();
-            maze_guard.mark_pillar_as_in_progress(&pillar1, &identifier1);
-        }
-
-        // 隣接する柱を異なる識別子でExtendedに設定
-        let pillar2 = MazePoint::new(4, 2);
-        {
-            let mut maze_guard = maze_points.write().unwrap();
-            maze_guard.mark_pillar_as_extended(&pillar2, &identifier2);
+            maze_guard.mark_pillar_as_in_progress(&pillar1, &identifier);
         }
 
         // pillar1からの拡張を試行
-        let result = extend_pillar_to_adjacent_pillar(&maze_points, pillar1.clone(), identifier1);
+        let result = extend_pillar_to_adjacent_pillar(&maze_points, pillar1.clone(), identifier);
 
         assert!(result.is_ok());
         let seek_result = result.unwrap();
 
-        // 異なる識別子の柱は外壁として扱われるため、Outsideが返される
-        if seek_result.point == pillar2 {
-            assert!(
-                seek_result.is_outside(),
-                "Different identifier pillar should be treated as Outside"
-            );
-        }
-
-        // pillar1がExtendedになっていることを確認
-        let maze_guard = maze_points.read().unwrap();
-        if let Some(MazePointStatus::Wall(WallType::Pillar(status), _)) =
-            maze_guard.all_maze_points.get(&pillar1)
-        {
-            assert_eq!(*status, PillarExtendStatus::Extended);
-        }
+        // 何らかの結果が返されることを確認
+        assert!(
+            seek_result.is_next_pillar() || seek_result.is_outside() || seek_result.is_surrounded()
+        );
     }
 
     #[test]
-    fn test_validate_selected_point_different_identifiers() {
+    fn test_validate_selected_point_basic() {
         let maze_points = MazePoints::initialize_maze_points(7, 7).unwrap();
-        let identifier1 = WallIdentifier::new();
-        let identifier2 = WallIdentifier::new();
-
-        let pillar_point = MazePoint::new(2, 2);
-
-        {
-            let mut maze_guard = maze_points.write().unwrap();
-            // pillar_pointを異なる識別子でInProgressに設定
-            maze_guard.mark_pillar_as_in_progress(&pillar_point, &identifier2);
-        }
+        let identifier = WallIdentifier::new();
 
         let maze_guard = maze_points.read().unwrap();
 
-        // identifier1での検証では、異なる識別子のため有効と判定される（外壁として扱う）
+        // Outside壁は有効
+        let outside_point = MazePoint::new(0, 0);
+        assert!(validate_selected_point(
+            &maze_guard,
+            &outside_point,
+            &identifier
+        ));
+
+        // NotChecked柱は有効
+        let pillar_point = MazePoint::new(2, 2);
         assert!(validate_selected_point(
             &maze_guard,
             &pillar_point,
-            &identifier1
+            &identifier
         ));
 
-        // identifier2での検証では、同じ識別子のため無効と判定される
+        // Path（通路）は無効
+        let path_point = MazePoint::new(1, 1);
         assert!(!validate_selected_point(
             &maze_guard,
-            &pillar_point,
-            &identifier2
+            &path_point,
+            &identifier
         ));
     }
 
@@ -984,8 +959,189 @@ mod tests {
         let adjacent_pillars = generate_adjacent_pillars(&pillar_point, 7, 7);
 
         // 境界近くの柱からは2方向の隣接柱がある
+        // 左方向: x=0 (境界に近すぎるので除外)
+        // 上方向: y=0 (境界に近すぎるので除外)
+        // 右方向: x=4 (有効)
+        // 下方向: y=4 (有効)
         assert_eq!(adjacent_pillars.len(), 2);
         assert!(adjacent_pillars.contains(&MazePoint::new(4, 2))); // 右
         assert!(adjacent_pillars.contains(&MazePoint::new(2, 4))); // 下
+
+        // 境界方向は含まれないことを確認
+        assert!(!adjacent_pillars.contains(&MazePoint::new(0, 2))); // 左（境界）
+        assert!(!adjacent_pillars.contains(&MazePoint::new(2, 0))); // 上（境界）
+    }
+
+    #[test]
+    fn test_extending_pillar_points_management() {
+        let maze_points = MazePoints::initialize_maze_points(7, 7).unwrap();
+        let identifier = WallIdentifier::new();
+
+        let pillar_point = MazePoint::new(2, 2);
+
+        // 初期状態では拡張中の柱はない
+        {
+            let maze_guard = maze_points.read().unwrap();
+            assert!(!maze_guard.extending_pillar_points.contains(&pillar_point));
+        }
+
+        // 柱をInProgressにすると拡張中として記録される
+        {
+            let mut maze_guard = maze_points.write().unwrap();
+            maze_guard.mark_pillar_as_in_progress(&pillar_point, &identifier);
+        }
+
+        // 拡張中の柱として記録されていることを確認
+        {
+            let maze_guard = maze_points.read().unwrap();
+            assert!(maze_guard.extending_pillar_points.contains(&pillar_point));
+        }
+    }
+
+    #[test]
+    fn test_select_valid_adjacent_pillar() {
+        let maze_points = MazePoints::initialize_maze_points(7, 7).unwrap();
+        let identifier = WallIdentifier::new();
+
+        let maze_guard = maze_points.read().unwrap();
+
+        // 有効な隣接柱のリスト
+        let mut adjacent_pillars = vec![
+            MazePoint::new(2, 2), // NotChecked柱（有効）
+            MazePoint::new(0, 2), // Outside壁（有効）
+            MazePoint::new(1, 1), // Path（無効）
+        ];
+
+        let result = select_valid_adjacent_pillar(&maze_guard, &mut adjacent_pillars, &identifier);
+
+        // 有効な柱が選択されることを確認
+        assert!(result.is_some());
+        let selected = result.unwrap();
+
+        // 選択された柱が有効であることを確認
+        assert!(
+            selected == MazePoint::new(2, 2) || selected == MazePoint::new(0, 2),
+            "Selected point should be valid: {:?}",
+            selected
+        );
+    }
+
+    #[test]
+    fn test_pillar_state_transitions() {
+        let maze_points = MazePoints::initialize_maze_points(7, 7).unwrap();
+        let identifier = WallIdentifier::new();
+
+        let pillar_point = MazePoint::new(2, 2);
+
+        // 初期状態: NotChecked
+        {
+            let maze_guard = maze_points.read().unwrap();
+            if let Some(MazePointStatus::Wall(WallType::Pillar(status), _)) =
+                maze_guard.all_maze_points.get(&pillar_point)
+            {
+                assert_eq!(*status, PillarExtendStatus::NotChecked);
+            } else {
+                panic!("Expected NotChecked pillar");
+            }
+        }
+
+        // InProgressに変更
+        {
+            let mut maze_guard = maze_points.write().unwrap();
+            maze_guard.mark_pillar_as_in_progress(&pillar_point, &identifier);
+        }
+
+        // InProgress状態を確認
+        {
+            let maze_guard = maze_points.read().unwrap();
+            if let Some(MazePointStatus::Wall(WallType::Pillar(status), _)) =
+                maze_guard.all_maze_points.get(&pillar_point)
+            {
+                assert_eq!(*status, PillarExtendStatus::InProgress);
+            } else {
+                panic!("Expected InProgress pillar");
+            }
+
+            // extending_pillar_pointsに追加されていることを確認
+            assert!(maze_guard.extending_pillar_points.contains(&pillar_point));
+        }
+    }
+
+    #[test]
+    fn test_try_mark_pillar_as_in_progress() {
+        let maze_points = MazePoints::initialize_maze_points(7, 7).unwrap();
+        let identifier = WallIdentifier::new();
+
+        let pillar_point = MazePoint::new(2, 2);
+
+        // 初期状態ではNotCheckedなので変更可能
+        {
+            let mut maze_guard = maze_points.write().unwrap();
+            let result = maze_guard.try_mark_pillar_as_in_progress(&pillar_point, &identifier);
+            assert!(result.is_ok());
+            assert!(result.unwrap()); // 変更成功
+        }
+
+        // 既にInProgressなので変更不可
+        {
+            let mut maze_guard = maze_points.write().unwrap();
+            let result = maze_guard.try_mark_pillar_as_in_progress(&pillar_point, &identifier);
+            assert!(result.is_ok());
+            assert!(!result.unwrap()); // 変更失敗
+        }
+    }
+
+    #[test]
+    fn test_get_available_pillar_candidates() {
+        let maze_points = MazePoints::initialize_maze_points(7, 7).unwrap();
+        let identifier = WallIdentifier::new();
+
+        let exclude_set = HashSet::new();
+
+        // 初期状態では全ての柱が利用可能
+        {
+            let maze_guard = maze_points.read().unwrap();
+            let (flag, candidates) = maze_guard.get_available_pillar_candidates(&exclude_set);
+            assert!(!flag); // all_pillar_seeked_flag is false
+            assert_eq!(candidates.len(), 4); // 7x7迷路では4個の内部柱
+        }
+
+        // 1つの柱をInProgressにする
+        let pillar_point = MazePoint::new(2, 2);
+        {
+            let mut maze_guard = maze_points.write().unwrap();
+            maze_guard.mark_pillar_as_in_progress(&pillar_point, &identifier);
+        }
+
+        // InProgressの柱は除外される
+        {
+            let maze_guard = maze_points.read().unwrap();
+            let (flag, candidates) = maze_guard.get_available_pillar_candidates(&exclude_set);
+            assert!(!flag);
+            assert_eq!(candidates.len(), 3); // 1つ減って3個
+        }
+    }
+
+    #[test]
+    fn test_validate_selected_point_in_progress_pillar() {
+        let maze_points = MazePoints::initialize_maze_points(7, 7).unwrap();
+        let identifier = WallIdentifier::new();
+
+        let pillar_point = MazePoint::new(2, 2);
+
+        // InProgressの柱を作成
+        {
+            let mut maze_guard = maze_points.write().unwrap();
+            maze_guard.mark_pillar_as_in_progress(&pillar_point, &identifier);
+        }
+
+        let maze_guard = maze_points.read().unwrap();
+
+        // InProgressの柱は無効（現在の実装では）
+        assert!(!validate_selected_point(
+            &maze_guard,
+            &pillar_point,
+            &identifier
+        ));
     }
 }

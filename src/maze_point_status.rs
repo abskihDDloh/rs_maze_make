@@ -41,8 +41,6 @@ pub enum PillarExtendStatus {
     NotChecked,
     /// 拡張処理中
     InProgress,
-    /// 拡張された柱
-    Extended,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -130,20 +128,13 @@ mod tests {
     fn test_pillar_extend_status_direct_matching() {
         let not_checked = PillarExtendStatus::NotChecked;
         let in_progress = PillarExtendStatus::InProgress;
-        let extended = PillarExtendStatus::Extended;
 
         // 直接パターンマッチングでテスト
         assert!(matches!(not_checked, PillarExtendStatus::NotChecked));
         assert!(!matches!(not_checked, PillarExtendStatus::InProgress));
-        assert!(!matches!(not_checked, PillarExtendStatus::Extended));
 
         assert!(!matches!(in_progress, PillarExtendStatus::NotChecked));
         assert!(matches!(in_progress, PillarExtendStatus::InProgress));
-        assert!(!matches!(in_progress, PillarExtendStatus::Extended));
-
-        assert!(!matches!(extended, PillarExtendStatus::NotChecked));
-        assert!(!matches!(extended, PillarExtendStatus::InProgress));
-        assert!(matches!(extended, PillarExtendStatus::Extended));
     }
 
     #[test]
@@ -192,17 +183,11 @@ mod tests {
     fn test_pillar_status_transitions() {
         let identifier = WallIdentifier::new();
 
-        // NotChecked → InProgress
+        // NotChecked → InProgress（Extendedは削除されたため、InProgressまでのテスト）
         let not_checked =
             MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::NotChecked), None);
         let in_progress = MazePointStatus::Wall(
             WallType::Pillar(PillarExtendStatus::InProgress),
-            Some(identifier.clone()),
-        );
-
-        // InProgress → Extended
-        let extended = MazePointStatus::Wall(
-            WallType::Pillar(PillarExtendStatus::Extended),
             Some(identifier.clone()),
         );
 
@@ -219,13 +204,6 @@ mod tests {
                 assert!(matches!(status, PillarExtendStatus::InProgress));
             }
             _ => panic!("Expected InProgress pillar"),
-        }
-
-        match extended {
-            MazePointStatus::Wall(WallType::Pillar(status), _) => {
-                assert!(matches!(status, PillarExtendStatus::Extended));
-            }
-            _ => panic!("Expected Extended pillar"),
         }
     }
 
@@ -332,6 +310,65 @@ mod tests {
                 assert!(matches!(wall_type, WallType::Outside));
                 assert!(id.is_some());
             }
+        }
+    }
+
+    #[test]
+    fn test_pillar_extend_status_all_variants() {
+        // 利用可能な全ての状態をテスト
+        let not_checked = PillarExtendStatus::NotChecked;
+        let in_progress = PillarExtendStatus::InProgress;
+
+        // NotCheckedのテスト
+        assert!(matches!(not_checked, PillarExtendStatus::NotChecked));
+        assert!(!matches!(not_checked, PillarExtendStatus::InProgress));
+
+        // InProgressのテスト
+        assert!(!matches!(in_progress, PillarExtendStatus::NotChecked));
+        assert!(matches!(in_progress, PillarExtendStatus::InProgress));
+    }
+
+    #[test]
+    fn test_pillar_in_progress_with_identifier() {
+        let identifier = WallIdentifier::new();
+
+        // InProgress状態の柱は識別子を持つ
+        let in_progress_pillar = MazePointStatus::Wall(
+            WallType::Pillar(PillarExtendStatus::InProgress),
+            Some(identifier.clone()),
+        );
+
+        match in_progress_pillar {
+            MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::InProgress), Some(id)) => {
+                assert_eq!(id.as_str(), identifier.as_str());
+            }
+            _ => panic!("Expected InProgress pillar with identifier"),
+        }
+    }
+
+    #[test]
+    fn test_pillar_identifier_requirements() {
+        let identifier = WallIdentifier::new();
+
+        // NotChecked柱は識別子を持たない
+        let not_checked_pillar = MazePointStatus::new_notchecked_pillar();
+        match not_checked_pillar {
+            MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::NotChecked), None) => {
+                // 正常
+            }
+            _ => panic!("NotChecked pillar should not have identifier"),
+        }
+
+        // InProgress柱は識別子を持つ
+        let in_progress_pillar = MazePointStatus::Wall(
+            WallType::Pillar(PillarExtendStatus::InProgress),
+            Some(identifier),
+        );
+        match in_progress_pillar {
+            MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::InProgress), Some(_)) => {
+                // 正常
+            }
+            _ => panic!("InProgress pillar should have identifier"),
         }
     }
 }

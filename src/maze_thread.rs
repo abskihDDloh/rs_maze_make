@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::HashSet,
+    sync::{Arc, RwLock},
+};
 
 use log::{debug, info, warn};
 
@@ -30,7 +33,11 @@ pub fn maze_generate_thread(
         }
         drop(maze_points_read); // 明示的にロックを解除
 
+        //今まで確認した柱(囲まれているものを除く)
         let mut pillar_stack = Vec::new();
+
+        //囲まれている柱(ここには行かない)
+        let mut surrounded_pillars = HashSet::new();
 
         // 最初の開始点を取得
         match select_start_pillar_point(maze_points, identifier.clone()) {
@@ -48,6 +55,17 @@ pub fn maze_generate_thread(
         loop {
             // pillar_stackの最後の要素を取得する。
             if let Some(current_pillar) = pillar_stack.last() {
+                
+                if surrounded_pillars.contains(current_pillar) {
+                    // 囲まれた柱はスキップ
+                    debug!(
+                        "Skipping surrounded pillar: {:?} Identifier: {:?}",
+                        current_pillar, identifier
+                    );
+                    pillar_stack.pop();
+                    continue;
+                }
+
                 // 修正: 引数の型を正しく渡す
                 match extend_pillar_to_adjacent_pillar(
                     maze_points,
@@ -57,6 +75,23 @@ pub fn maze_generate_thread(
                     Ok(new_point) => {
                         if new_point.is_next_pillar() {
                             pillar_stack.push(new_point.point);
+                        } else if new_point.is_surrounded() {
+                            // 壁を分岐させたいので、囲まれた柱に到達したら一つ前の柱に戻る。
+                            // 修正: unwrap()をエラーハンドリングに置き換え
+                            match pillar_stack.pop() {
+                                Some(val) => {
+                                    surrounded_pillars.insert(val);
+                                }
+                                None => {
+                                    return Err(Box::new(std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        format!(
+                                            "Pillar stack is empty when trying to pop surrounded pillar. identifier: {:?}",
+                                            identifier
+                                        ),
+                                    )));
+                                }
+                            }
                         } else {
                             debug!(
                                 "No more pillars to process. Try get other start point. {:?} Pillars: {:?}",
@@ -101,10 +136,12 @@ pub fn maze_generate_monitor_thread(
                 maze_points_read.all_pillar_seeked_flag(),
             )
         }; // ここでロック解除
+
         let duration = match loop_unix_timestamp.duration_since(start_unix_timestamp) {
             Ok(dur) => dur.as_secs_f64(),
             Err(_) => 0.0,
         };
+
         // プログレス情報をログ出力
         info!(
             "Maze progress: {}/{}, Percentage:{}(%) Extended pillars per time {} , Pillars extended ({}x{}), Elapsed_time: {:?}",
