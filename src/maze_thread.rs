@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use log::{info, warn};
+use log::{debug, info, warn};
 
 use crate::{
     maze_field::{MazePoints, extend_pillar_to_adjacent_pillar, select_start_pillar_point},
@@ -58,7 +58,7 @@ pub fn maze_thread_func(
                         if new_point.is_next_pillar() {
                             pillar_stack.push(new_point.point);
                         } else {
-                            info!(
+                            debug!(
                                 "No more pillars to process. Try get other start point. {:?} Pillars: {:?}",
                                 identifier, pillar_stack
                             );
@@ -66,12 +66,12 @@ pub fn maze_thread_func(
                         }
                     }
                     Err(err) => {
-                        warn!("Failed to extend  Pillars: {:?} {}", pillar_stack, err);
+                        warn!("Failed to extend. Pillars: {:?} {}", pillar_stack, err);
                         break;
                     }
                 }
             } else {
-                info!(
+                debug!(
                     "No more pillars to process. Try get other start point. {:?} Pillars: {:?}",
                     identifier, pillar_stack
                 );

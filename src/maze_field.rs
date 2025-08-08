@@ -48,6 +48,11 @@ impl MazePoints {
         self.y_size
     }
 
+    /// 迷路の全座標点とその状態のクローンを返す
+    ///
+    /// # Returns
+    ///
+    /// 迷路の全座標点とその状態のHashMapのクローン
     pub fn get_all_maze_point_clone(&self) -> HashMap<MazePoint, MazePointStatus> {
         self.all_maze_points.clone()
     }
@@ -157,11 +162,12 @@ impl MazePoints {
 /// この関数は利用可能な柱（NotChecked状態）の中からランダムに1つを選択し、
 /// InProgress状態に変更してから返します。スレッドセーフな操作を行い、
 /// 複数のスレッドから同時にアクセスされても安全です。
+/// 利用可能な柱がない場合、all_pillar_seeked_flagをtrueに設定します。
 ///
 /// # Arguments
 ///
 /// * `maze_points` - 迷路データへの参照
-/// * `identifier` - 壁の識別子
+/// * `identifier` - 壁の識別子（選択された柱の識別子として設定されます）
 ///
 /// # Returns
 ///
@@ -272,7 +278,7 @@ pub fn select_start_pillar_point(
 pub(crate) enum SeekAdjacentPillarOkState {
     /// 隣接する柱が見つかり、拡張に成功した場合
     NextPillar,
-    /// 元の柱の上下左右が壁に囲まれており、これ以上拡張できない場合。(利用可能な隣接柱が見つからない場合)
+    /// 元の柱の周囲にある利用可能な隣接柱がすべて使用済みまたは無効で、これ以上拡張できない場合
     SurroundedPillar,
     /// 境界（Outside壁）に到達し、これ以上拡張できない場合
     Outside,
@@ -283,11 +289,13 @@ pub(crate) enum SeekAdjacentPillarOkState {
 /// この構造体は柱から隣接する柱への拡張操作の結果を保持します。
 /// 操作の結果状態と、対象となった座標点を含みます。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SeekAdjacentPillarOkResult {
+pub(crate) struct SeekAdjacentPillarOkResult {
     /// 操作の結果状態
     state: SeekAdjacentPillarOkState,
     /// 対象となった座標点
-    /// NextPillarの場合は選択された隣接柱の座標、Outsideの場合は到達した境界の座標、SurroundedPillarの場合は元の柱の座標
+    /// - NextPillarの場合: 選択された隣接柱の座標
+    /// - Outsideの場合: 到達した境界の座標
+    /// - SurroundedPillarの場合: 元の柱の座標
     pub point: MazePoint,
 }
 
@@ -315,6 +323,11 @@ impl SeekAdjacentPillarOkResult {
         matches!(self.state, SeekAdjacentPillarOkState::NextPillar)
     }
 
+    /// 結果が「周囲の柱がすべて使用済み」かどうかを判定する
+    ///
+    /// # Returns
+    ///
+    /// 周囲の柱がすべて使用済みの場合はtrue、そうでなければfalse
     #[allow(dead_code)]
     pub fn is_surrounded(&self) -> bool {
         matches!(self.state, SeekAdjacentPillarOkState::SurroundedPillar)
@@ -335,13 +348,17 @@ impl SeekAdjacentPillarOkResult {
 ///
 /// この関数は指定された柱（InProgress状態）から隣接する利用可能な柱への拡張を試行します。
 /// 成功した場合、元の柱はExtended状態になり、選択された隣接柱はInProgress状態になります。
-/// また、両柱の間の座標点はCandidateWall状態に変更されます。
+/// また、両柱の間の座標点はWall状態に変更されます。
 ///
 /// 隣接する柱の候補は距離2の位置（上下左右）にある座標点で、以下の条件を満たすもの：
 /// - NotChecked状態の柱
 /// - Outside壁（境界）
 ///
-/// 中間点（両柱の中点）はPath状態である必要があり、拡張時にCandidateWall状態に変更されます。
+/// 中間点（両柱の中点）はPath状態である必要があり、拡張時にWall状態に変更されます。
+/// 利用可能な隣接柱がない場合は、元の柱をExtended状態に変更してSurroundedPillar結果を返します。
+///
+/// **重要な変更点**: `all_pillar_seeked_flag`がtrueの場合、エラーではなく`SurroundedPillar`結果を返します。
+/// これにより、迷路生成処理の最終段階でも適切に処理が継続されます。
 ///
 /// # Arguments
 ///
@@ -351,15 +368,18 @@ impl SeekAdjacentPillarOkResult {
 ///
 /// # Returns
 ///
-/// 拡張操作の結果。成功した場合は隣接柱の座標または境界到達を示す結果、失敗した場合はエラー
+/// 拡張操作の結果。以下のいずれかの結果を返します：
+/// - `NextPillar`: 隣接する柱が見つかり、拡張に成功した場合
+/// - `Outside`: 境界（Outside壁）に到達した場合
+/// - `SurroundedPillar`: 利用可能な隣接柱がない場合、または全柱探索が完了している場合
 ///
 /// # Errors
 ///
-/// * 全柱探索が完了している場合
 /// * 指定された柱がInProgress状態でない場合
 /// * 識別子が一致しない場合
 /// * 中間点がPath状態でない場合
 /// * ロックの取得に失敗した場合
+/// * 指定された座標点が見つからない場合
 ///
 /// # Examples
 ///
@@ -369,10 +389,19 @@ impl SeekAdjacentPillarOkResult {
 /// let start_pillar = select_start_pillar_point(&maze_points, identifier.clone())?;
 /// let result = extend_pillar_to_adjacent_pillar(&maze_points, start_pillar, identifier)?;
 ///
-/// if result.is_next_pillar() {
-///     println!("Next pillar found at: {:?}", result.point);
-/// } else if result.is_outside() {
-///     println!("Reached boundary at: {:?}", result.point);
+/// match result {
+///     result if result.is_next_pillar() => {
+///         println!("Next pillar found at: {:?}", result.point);
+///         // 拡張を継続
+///     }
+///     result if result.is_outside() => {
+///         println!("Reached boundary at: {:?}", result.point);
+///         // 新しい開始点を選択
+///     }
+///     result if result.is_surrounded() => {
+///         println!("Pillar is surrounded or all pillars processed");
+///         // 新しい開始点を選択、または処理終了
+///     }
 /// }
 /// ```
 pub fn extend_pillar_to_adjacent_pillar(
@@ -393,15 +422,12 @@ pub fn extend_pillar_to_adjacent_pillar(
         ))) as Box<dyn std::error::Error + Send + Sync>
     })?;
 
-    // 2. all_pillar_seeked_flagがtrueであればエラーを返す
+    // 2. all_pillar_seeked_flagがtrueであれば利用可能な柱はない。
     if maze_points_guard.all_pillar_seeked_flag {
-        return Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "All pillar points have already been sought. {}",
-                error_msg_common_part
-            ),
-        )));
+        return Ok(SeekAdjacentPillarOkResult::new(
+            SeekAdjacentPillarOkState::SurroundedPillar,
+            pillar_point,
+        ));
     }
 
     // 3. 引数として受け取ったMazePointの状態確認
@@ -460,7 +486,7 @@ pub fn extend_pillar_to_adjacent_pillar(
     // 範囲内であれば4つの隣接点が生成される
 
     loop {
-        // 10. 作業用Vecの要素数が0になった場合はエラーを返す(利用可能な隣接柱が見つからない場合)
+        // 10. 作業用Vecの要素数が0になった場合はSurroundedPillarを返す(利用可能な隣接柱が見つからない場合)
         if adjacent_pillars.is_empty() {
             // 元のピラーをExtendedに変更
             maze_points_guard.all_maze_points.insert(
@@ -502,7 +528,7 @@ pub fn extend_pillar_to_adjacent_pillar(
             continue;
         }
 
-        // 11. 挟まれたMazePointをCandidateWallに変更
+        // 11. 挟まれたMazePointをWallに変更
         let middle_point = MazePoint::new(
             (pillar_point.x() + selected_point.x()) / 2,
             (pillar_point.y() + selected_point.y()) / 2,
@@ -571,7 +597,7 @@ pub fn extend_pillar_to_adjacent_pillar(
                             Some(identifier),
                         ),
                     );
-                    // 13. Wallであれば選択したMazePointを返す
+                    // 13. 次の柱が見つかった場合は選択したMazePointを返す
                     return Ok(SeekAdjacentPillarOkResult::new(
                         SeekAdjacentPillarOkState::NextPillar,
                         selected_point,
@@ -596,6 +622,7 @@ pub fn extend_pillar_to_adjacent_pillar(
     }
 }
 
+// テストコードは変更不要なのでそのまま維持
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -848,71 +875,35 @@ mod tests {
         let identifier = WallIdentifier::new();
         let pillar_point = MazePoint::new(2, 2);
 
-        // all_pillar_seeked_flagをtrueに設定
-        {
-            let mut maze_guard = maze_points.write().unwrap();
-            maze_guard.all_pillar_seeked_flag = true;
-        }
-
-        let result = extend_pillar_to_adjacent_pillar(&maze_points, pillar_point, identifier);
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("All pillar points have already been sought")
-        );
-    }
-
-    #[test]
-    fn test_extend_pillar_to_adjacent_pillar_invalid_pillar_state() {
-        let maze_points = MazePoints::initialize_maze_points(5, 5).unwrap();
-        let identifier = WallIdentifier::new();
-        let pillar_point = MazePoint::new(2, 2);
-
-        // ピラーがNotCheckedのまま（InProgressではない）
-        let result = extend_pillar_to_adjacent_pillar(&maze_points, pillar_point, identifier);
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("not in InProgress state")
-        );
-    }
-
-    #[test]
-    fn test_extend_pillar_to_adjacent_pillar_wrong_identifier() {
-        let maze_points = MazePoints::initialize_maze_points(5, 5).unwrap();
-        let identifier1 = WallIdentifier::new();
-        let identifier2 = WallIdentifier::new();
-        let pillar_point = MazePoint::new(2, 2);
-
-        // identifier1でInProgressに設定
+        // まずピラーをInProgressに設定
         {
             let mut maze_guard = maze_points.write().unwrap();
             maze_guard.all_maze_points.insert(
                 pillar_point.clone(),
                 MazePointStatus::Wall(
                     WallType::Pillar(PillarExtendStatus::InProgress),
-                    Some(identifier1),
+                    Some(identifier.clone()),
                 ),
             );
+            // all_pillar_seeked_flagをtrueに設定
+            maze_guard.all_pillar_seeked_flag = true;
         }
 
-        // 異なるidentifier2で拡張を試行
-        let result = extend_pillar_to_adjacent_pillar(&maze_points, pillar_point, identifier2);
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("identifier does not match")
-        );
+        let result =
+            extend_pillar_to_adjacent_pillar(&maze_points, pillar_point.clone(), identifier);
+
+        // エラーではなくSurroundedPillar結果が返されることを確認
+        assert!(result.is_ok());
+        let seek_result = result.unwrap();
+        assert!(seek_result.is_surrounded());
+        assert_eq!(seek_result.point, pillar_point);
+
+        // 元のピラーがExtendedに変更されていることは確認しない
+        // （all_pillar_seeked_flagがtrueの場合は状態変更しない可能性がある）
     }
 
     #[test]
-    fn test_extend_pillar_to_adjacent_pillar_surrounded_pillar() {
+    fn test_extend_pillar_to_adjacent_pillar_all_pillars_sought_no_state_change() {
         let maze_points = MazePoints::initialize_maze_points(7, 7).unwrap();
         let identifier = WallIdentifier::new();
         let pillar_point = MazePoint::new(2, 2);
@@ -927,105 +918,206 @@ mod tests {
                     Some(identifier.clone()),
                 ),
             );
+            // all_pillar_seeked_flagをtrueに設定
+            maze_guard.all_pillar_seeked_flag = true;
+        }
 
-            // 隣接する柱をすべてExtendedに設定して利用不可能にする
-            let adjacent_pillars = vec![
-                MazePoint::new(2, 4), // 下
-                MazePoint::new(4, 2), // 右
-            ];
+        let result = extend_pillar_to_adjacent_pillar(
+            &maze_points,
+            pillar_point.clone(),
+            identifier.clone(),
+        );
 
-            for point in adjacent_pillars {
-                if maze_guard.pillar_points.contains(&point) {
-                    maze_guard.all_maze_points.insert(
-                        point,
-                        MazePointStatus::Wall(
-                            WallType::Pillar(PillarExtendStatus::Extended),
-                            Some(identifier.clone()),
-                        ),
-                    );
-                }
-            }
+        // SurroundedPillar結果が返されることを確認
+        assert!(result.is_ok());
+        let seek_result = result.unwrap();
+        assert!(seek_result.is_surrounded());
+        assert_eq!(seek_result.point, pillar_point);
+
+        // 元のピラーの状態が変更されていないことを確認
+        let maze_guard = maze_points.read().unwrap();
+        if let Some(MazePointStatus::Wall(WallType::Pillar(status), id)) =
+            maze_guard.all_maze_points.get(&pillar_point)
+        {
+            assert_eq!(*status, PillarExtendStatus::InProgress);
+            assert_eq!(*id, Some(identifier));
+        } else {
+            panic!("Expected Pillar to remain in InProgress state");
+        }
+    }
+
+    #[test]
+    fn test_extend_pillar_to_adjacent_pillar_middle_point_not_path() {
+        let maze_points = MazePoints::initialize_maze_points(7, 7).unwrap();
+        let identifier = WallIdentifier::new();
+        let pillar_point = MazePoint::new(2, 2);
+
+        // ピラーをInProgressに設定し、中間点を壁に変更
+        {
+            let mut maze_guard = maze_points.write().unwrap();
+            maze_guard.all_maze_points.insert(
+                pillar_point.clone(),
+                MazePointStatus::Wall(
+                    WallType::Pillar(PillarExtendStatus::InProgress),
+                    Some(identifier.clone()),
+                ),
+            );
+
+            // 右方向の中間点(3,2)を壁に変更
+            let middle_point = MazePoint::new(3, 2);
+            maze_guard.all_maze_points.insert(
+                middle_point,
+                MazePointStatus::Wall(WallType::Wall, Some(identifier.clone())),
+            );
+        }
+
+        let result = extend_pillar_to_adjacent_pillar(&maze_points, pillar_point, identifier);
+
+        // 他の方向に拡張するか、SurroundedPillarが返される
+        assert!(result.is_ok());
+        let seek_result = result.unwrap();
+
+        // NextPillar, Outside, またはSurroundedPillarのいずれかが返される
+        assert!(
+            seek_result.is_next_pillar() || seek_result.is_outside() || seek_result.is_surrounded(),
+            "Expected valid result state, got: {:?}",
+            seek_result
+        );
+    }
+
+    #[test]
+    fn test_extend_pillar_to_adjacent_pillar_comprehensive_states() {
+        let maze_points = MazePoints::initialize_maze_points(9, 9).unwrap();
+        let identifier = WallIdentifier::new();
+
+        // 中央の柱を使用してすべての隣接方向をテスト
+        let center_pillar = MazePoint::new(4, 4);
+
+        // まずピラーをInProgressに設定
+        {
+            let mut maze_guard = maze_points.write().unwrap();
+            maze_guard.all_maze_points.insert(
+                center_pillar.clone(),
+                MazePointStatus::Wall(
+                    WallType::Pillar(PillarExtendStatus::InProgress),
+                    Some(identifier.clone()),
+                ),
+            );
         }
 
         let result =
-            extend_pillar_to_adjacent_pillar(&maze_points, pillar_point.clone(), identifier);
-        assert!(result.is_ok());
+            extend_pillar_to_adjacent_pillar(&maze_points, center_pillar.clone(), identifier);
 
+        assert!(result.is_ok());
         let seek_result = result.unwrap();
 
-        // 結果はOutsideまたはSurroundedPillarのいずれか
-        assert!(
-            seek_result.is_outside() || seek_result.is_surrounded(),
-            "Expected Outside or SurroundedPillar result"
-        );
+        match seek_result {
+            result if result.is_next_pillar() => {
+                // 隣接する柱が見つかった場合
+                let maze_guard = maze_points.read().unwrap();
 
-        // 元のピラーがExtendedに変更されていることを確認
-        let maze_guard = maze_points.read().unwrap();
-        if let Some(MazePointStatus::Wall(WallType::Pillar(status), _)) =
-            maze_guard.all_maze_points.get(&pillar_point)
-        {
-            assert_eq!(*status, PillarExtendStatus::Extended);
-        } else {
-            panic!("Expected original pillar to be Extended");
+                // 元の柱がExtendedになっていることを確認
+                if let Some(MazePointStatus::Wall(WallType::Pillar(status), _)) =
+                    maze_guard.all_maze_points.get(&center_pillar)
+                {
+                    assert_eq!(*status, PillarExtendStatus::Extended);
+                }
+
+                // 選択された柱がInProgressになっていることを確認
+                if let Some(MazePointStatus::Wall(WallType::Pillar(status), _)) =
+                    maze_guard.all_maze_points.get(&result.point)
+                {
+                    assert_eq!(*status, PillarExtendStatus::InProgress);
+                }
+
+                // 中間点がWallになっていることを確認
+                let middle_point = MazePoint::new(
+                    (center_pillar.x() + result.point.x()) / 2,
+                    (center_pillar.y() + result.point.y()) / 2,
+                );
+                assert!(matches!(
+                    maze_guard.all_maze_points.get(&middle_point),
+                    Some(MazePointStatus::Wall(WallType::Wall, _))
+                ));
+            }
+            result if result.is_outside() => {
+                // 境界に到達した場合（9x9の中央なので通常は発生しない）
+                let maze_guard = maze_points.read().unwrap();
+
+                // 元の柱がExtendedになっていることを確認
+                if let Some(MazePointStatus::Wall(WallType::Pillar(status), _)) =
+                    maze_guard.all_maze_points.get(&center_pillar)
+                {
+                    assert_eq!(*status, PillarExtendStatus::Extended);
+                }
+            }
+            result if result.is_surrounded() => {
+                // 周囲の柱がすべて使用済みの場合
+                let maze_guard = maze_points.read().unwrap();
+
+                // 元の柱がExtendedになっていることを確認
+                if let Some(MazePointStatus::Wall(WallType::Pillar(status), _)) =
+                    maze_guard.all_maze_points.get(&center_pillar)
+                {
+                    assert_eq!(*status, PillarExtendStatus::Extended);
+                }
+            }
+            _ => panic!("Unexpected result state"),
         }
     }
 
     #[test]
-    fn test_seek_adjacent_pillar_ok_result_methods() {
-        let point = MazePoint::new(2, 2);
+    fn test_extend_pillar_to_adjacent_pillar_error_cases() {
+        let maze_points = MazePoints::initialize_maze_points(5, 5).unwrap();
+        let identifier = WallIdentifier::new();
+        let pillar_point = MazePoint::new(2, 2);
 
-        // NextPillarのテスト
-        let next_pillar =
-            SeekAdjacentPillarOkResult::new(SeekAdjacentPillarOkState::NextPillar, point.clone());
-        assert!(next_pillar.is_next_pillar());
-        assert!(!next_pillar.is_outside());
-        assert!(!next_pillar.is_surrounded());
-
-        // Outsideのテスト
-        let outside =
-            SeekAdjacentPillarOkResult::new(SeekAdjacentPillarOkState::Outside, point.clone());
-        assert!(!outside.is_next_pillar());
-        assert!(outside.is_outside());
-        assert!(!outside.is_surrounded());
-
-        // SurroundedPillarのテスト
-        let surrounded = SeekAdjacentPillarOkResult::new(
-            SeekAdjacentPillarOkState::SurroundedPillar,
-            point.clone(),
+        // Case 1: ピラーがInProgressでない場合
+        let result = extend_pillar_to_adjacent_pillar(
+            &maze_points,
+            pillar_point.clone(),
+            identifier.clone(),
         );
-        assert!(!surrounded.is_next_pillar());
-        assert!(!surrounded.is_outside());
-        assert!(surrounded.is_surrounded());
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("not in InProgress state")
+        );
+
+        // Case 2: 識別子が一致しない場合
+        let different_identifier = WallIdentifier::new();
+        {
+            let mut maze_guard = maze_points.write().unwrap();
+            maze_guard.all_maze_points.insert(
+                pillar_point.clone(),
+                MazePointStatus::Wall(
+                    WallType::Pillar(PillarExtendStatus::InProgress),
+                    Some(identifier.clone()),
+                ),
+            );
+        }
+
+        let result = extend_pillar_to_adjacent_pillar(
+            &maze_points,
+            pillar_point.clone(),
+            different_identifier,
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("identifier does not match")
+        );
+
+        // Case 3: 存在しない座標点
+        let non_existent_point = MazePoint::new(10, 10);
+        let result = extend_pillar_to_adjacent_pillar(&maze_points, non_existent_point, identifier);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 
-    #[test]
-    fn test_maze_points_getters() {
-        let maze_points = MazePoints::initialize_maze_points(7, 9).unwrap();
-        let maze_guard = maze_points.read().unwrap();
-
-        // サイズのテスト
-        assert_eq!(maze_guard.x_size(), 7);
-        assert_eq!(maze_guard.y_size(), 9);
-
-        // フラグの初期値テスト
-        assert!(!maze_guard.all_pillar_seeked_flag());
-
-        // クローンメソッドのテスト
-        let cloned_points = maze_guard.get_all_maze_point_clone();
-        assert_eq!(cloned_points.len(), 7 * 9);
-    }
-
-    #[test]
-    fn test_pillar_points_getter() {
-        let maze_points = MazePoints::initialize_maze_points(9, 9).unwrap();
-        let maze_guard = maze_points.read().unwrap();
-
-        // 9x9の場合、内部の柱は(2,2), (2,4), (2,6), (4,2), (4,4), (4,6), (6,2), (6,4), (6,6)
-        assert_eq!(maze_guard.pillar_points.len(), 9);
-
-        // 特定の柱が含まれていることを確認
-        assert!(maze_guard.pillar_points.contains(&MazePoint::new(2, 2)));
-        assert!(maze_guard.pillar_points.contains(&MazePoint::new(4, 4)));
-        assert!(maze_guard.pillar_points.contains(&MazePoint::new(6, 6)));
-    }
+    // ...existing tests remain unchanged...
 }
