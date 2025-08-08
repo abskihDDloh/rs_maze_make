@@ -13,7 +13,9 @@ use std::{
 use threadpool::ThreadPool;
 
 use crate::{
-    maze_field::MazePoints, maze_point_status::MazePointStatus, maze_thread::maze_thread_func,
+    maze_field::MazePoints,
+    maze_point_status::MazePointStatus,
+    maze_thread::{maze_generate_monitor_thread, maze_generate_thread},
 };
 
 #[derive(Parser, Debug)]
@@ -52,27 +54,55 @@ fn make_maze(
 
     info!("Maze initialized with size {}x{}", x_size, y_size);
     let num_threads = get_workers_limit();
-    let pool = ThreadPool::new(num_threads);
-    info!("ThreadPool created with {} threads", num_threads);
+    let pool = ThreadPool::new(num_threads + 1); // 監視スレッド用に+1
+    info!(
+        "ThreadPool created with {} threads (+ 1 monitor thread)",
+        num_threads
+    );
 
-    for thread_id in 0..num_threads {
+    // 監視スレッドを追加
+    {
         let maze_points_clone = Arc::clone(&maze_points);
-
         pool.execute(move || {
-            info!("Starting maze thread {}", thread_id);
+            info!("Starting maze monitor thread");
 
-            match maze_thread_func(&maze_points_clone) {
-                Ok(()) => {
-                    info!("Maze thread {} completed successfully", thread_id);
+            match maze_generate_monitor_thread(&maze_points_clone) {
+                Ok(progress) => {
+                    info!(
+                        "Maze monitor thread completed. Final progress: {:?}",
+                        progress
+                    );
                 }
                 Err(e) => {
-                    error!("Maze thread {} failed: {}", thread_id, e);
+                    error!("Maze monitor thread failed: {}", e);
                 }
             }
         });
     }
+
+    // 迷路生成スレッドを追加
+    for thread_id in 0..num_threads {
+        let maze_points_clone = Arc::clone(&maze_points);
+
+        pool.execute(move || {
+            info!("Starting maze generation thread {}", thread_id);
+
+            match maze_generate_thread(&maze_points_clone) {
+                Ok(()) => {
+                    info!(
+                        "Maze generation thread {} completed successfully",
+                        thread_id
+                    );
+                }
+                Err(e) => {
+                    error!("Maze generation thread {} failed: {}", thread_id, e);
+                }
+            }
+        });
+    }
+
     pool.join();
-    info!("All maze generation threads completed");
+    info!("All maze generation and monitor threads completed");
 
     Ok(maze_points)
 }
@@ -88,7 +118,7 @@ fn save_maze_result_as_png(
     })?;
 
     let (width, height) = (maze_guard.x_size(), maze_guard.y_size());
-    let maze = maze_guard.get_all_maze_point_clone();
+    let maze = maze_guard.get_all_maze_points_clone();
     let mut img = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::new(width, height);
 
     for (point, status) in maze {

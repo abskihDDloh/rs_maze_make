@@ -7,12 +7,12 @@ use crate::{
     maze_point_status::WallIdentifier,
 };
 
-pub fn maze_thread_func(
+pub fn maze_generate_thread(
     maze_points: &Arc<RwLock<MazePoints>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let identifier = WallIdentifier::new();
-
     loop {
+        let identifier = WallIdentifier::new();
+
         // all_pillar_seeked_flag()がtrueの場合は、全ての柱が探索済みであるため、スレッドを終了する。
         // 修正: writeロックではなくreadロックを使用
         let maze_points_read = maze_points.read().map_err(|_| {
@@ -78,5 +78,51 @@ pub fn maze_thread_func(
                 break;
             }
         }
+    }
+}
+
+pub fn maze_generate_monitor_thread(
+    maze_points: &Arc<RwLock<MazePoints>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let start_unix_timestamp = std::time::SystemTime::now();
+    loop {
+        let loop_unix_timestamp = std::time::SystemTime::now();
+        let (x, y, all_pillar, extended_pillar, all_pillar_seeked) = {
+            let maze_points_read = maze_points.read().map_err(|_| {
+                Box::new(std::io::Error::other("Failed to acquire read lock"))
+                    as Box<dyn std::error::Error>
+            })?;
+
+            (
+                maze_points_read.x_size(),
+                maze_points_read.y_size(),
+                maze_points_read.get_all_pillar_points_clone().len(), // 修正: 正しいメソッド名
+                maze_points_read.get_extended_pillar_points_clone().len(),
+                maze_points_read.all_pillar_seeked_flag(),
+            )
+        }; // ここでロック解除
+        let duration = match loop_unix_timestamp.duration_since(start_unix_timestamp) {
+            Ok(dur) => dur.as_secs_f64(),
+            Err(_) => 0.0,
+        };
+        // プログレス情報をログ出力
+        info!(
+            "Maze progress: {}/{}, Percentage:{}(%) Extended pillars per time {} , Pillars extended ({}x{}), Elapsed_time: {:?}",
+            extended_pillar,
+            all_pillar,
+            (extended_pillar * 100) / all_pillar,
+            extended_pillar as f64 / duration,
+            x,
+            y,
+            duration,
+        );
+
+        if all_pillar_seeked {
+            info!("All pillars have been extended. Exiting monitor thread.");
+            return Ok(());
+        }
+
+        // 適切な間隔で監視
+        std::thread::sleep(std::time::Duration::from_millis(1000));
     }
 }
