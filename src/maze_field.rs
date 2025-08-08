@@ -310,21 +310,6 @@ impl MazePoints {
                         to_pillar.clone(),
                     ))
                 }
-                // InProgressもしくはExtendedのpillarで、identifierが引数と異なる場合は外壁と同じ扱いをする。
-                MazePointStatus::Wall(
-                    WallType::Pillar(PillarExtendStatus::InProgress),
-                    Some(ref id),
-                ) if id != identifier => Ok(SeekAdjacentPillarOkResult::new(
-                    SeekAdjacentPillarOkState::Outside,
-                    to_pillar.clone(),
-                )),
-                MazePointStatus::Wall(
-                    WallType::Pillar(PillarExtendStatus::Extended),
-                    Some(ref id),
-                ) if id != identifier => Ok(SeekAdjacentPillarOkResult::new(
-                    SeekAdjacentPillarOkState::Outside,
-                    to_pillar.clone(),
-                )),
                 _ => Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!("Unexpected pillar state at {:?}: {:?}", to_pillar, status),
@@ -866,14 +851,6 @@ fn validate_selected_point(
             MazePointStatus::Wall(WallType::Outside, _) => true,
             // NotChecked状態の柱は有効
             MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::NotChecked), _) => true,
-            // InProgressの柱で識別子が異なる場合は外壁として扱う
-            MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::InProgress), Some(id)) => {
-                id != current_identifier
-            }
-            // Extendedの柱で識別子が異なる場合は外壁として扱う
-            MazePointStatus::Wall(WallType::Pillar(PillarExtendStatus::Extended), Some(id)) => {
-                id != current_identifier
-            }
             // その他の状態は無効
             _ => false,
         }
