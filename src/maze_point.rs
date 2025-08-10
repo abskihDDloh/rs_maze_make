@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 ///迷路内のXY座標を表す構造体。
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct MazePoint {
     x: u32,
     y: u32,

@@ -2,11 +2,15 @@ mod maze_field;
 mod maze_point;
 mod maze_point_status;
 mod maze_thread;
+mod post_process;
 
 use clap::{Parser, arg, command};
 use log::{LevelFilter, error, info};
+use rand::Rng;
 use std::{
+    collections::{HashMap, HashSet},
     fs,
+    os::linux::raw::stat,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
@@ -14,7 +18,7 @@ use threadpool::ThreadPool;
 
 use crate::{
     maze_field::MazePoints,
-    maze_point_status::MazePointStatus,
+    maze_point_status::{MazePointStatus, WallIdentifier},
     maze_thread::{maze_generate_monitor_thread, maze_generate_thread},
 };
 
@@ -118,16 +122,55 @@ fn save_maze_result_as_png(
     })?;
 
     let (width, height) = (maze_guard.x_size(), maze_guard.y_size());
+    let maze_i = maze_guard.get_all_maze_points_clone();
+    let mut wall_identifiers: HashSet<WallIdentifier> = HashSet::new();
+    for (_point, status) in maze_i {
+        if status.is_wall()
+            && let Some(identifier) = status.get_wall_identifier()
+        {
+            wall_identifiers.insert(*identifier);
+        }
+    }
     let maze = maze_guard.get_all_maze_points_clone();
     let mut img = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::new(width, height);
+    let mut previous_color_list: HashSet<image::Rgba<u8>> = HashSet::new();
+    let mut wall_color_list: HashMap<WallIdentifier, image::Rgba<u8>> = HashMap::new();
 
+    // wall_identifiersの件数だけループ
+    for wall_identifier in &wall_identifiers {
+        loop {
+            let mut rng = rand::rng();
+            let wall_color = image::Rgba([
+                rng.random_range(0..=255),
+                rng.random_range(0..=255),
+                rng.random_range(0..=255),
+                255u8,
+            ]);
+            if !previous_color_list.contains(&wall_color) {
+                previous_color_list.insert(wall_color);
+                wall_color_list.insert(*wall_identifier, wall_color);
+                break;
+            }
+        }
+    }
+
+    info!(
+        "{} {} {}",
+        previous_color_list.len(),
+        wall_identifiers.len(),
+        wall_color_list.len()
+    );
     for (point, status) in maze {
         let color = match status {
             MazePointStatus::Path => image::Rgba([255u8, 255u8, 255u8, 255u8]), // 白
-            MazePointStatus::Wall(..) => image::Rgba([0u8, 0u8, 0u8, 255u8]),   // 黒
+            MazePointStatus::Wall(..) => wall_color_list
+                .get(status.get_wall_identifier().unwrap())
+                .cloned()
+                .unwrap_or(image::Rgba([0u8, 0u8, 0u8, 255u8])), // 黒
         };
         img.put_pixel(point.x(), point.y(), color);
     }
+
     img.save(file_path)?;
 
     Ok(())

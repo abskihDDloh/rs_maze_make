@@ -40,7 +40,7 @@ pub fn maze_generate_thread(
         let mut surrounded_pillars = HashSet::new();
 
         // 最初の開始点を取得
-        match select_start_pillar_point(maze_points, identifier.clone()) {
+        match select_start_pillar_point(maze_points, identifier) {
             Ok(pillar_point) => {
                 pillar_stack.push(pillar_point);
             }
@@ -69,8 +69,8 @@ pub fn maze_generate_thread(
                 // 修正: 引数の型を正しく渡す
                 match extend_pillar_to_adjacent_pillar(
                     maze_points,
-                    current_pillar.clone(), // &MazePoint → MazePoint
-                    identifier.clone(),     // &WallIdentifier → WallIdentifier
+                    *current_pillar, // &MazePoint → MazePoint
+                    identifier,     // &WallIdentifier → WallIdentifier
                 ) {
                     Ok(new_point) => {
                         if new_point.is_next_pillar() {
