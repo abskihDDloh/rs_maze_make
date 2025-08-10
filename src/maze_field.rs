@@ -848,6 +848,41 @@ fn select_valid_adjacent_pillar(
     None
 }
 
+/// 隣接セルを生成する
+///
+/// # Arguments
+///
+/// * `pillar_point` - 基準となる柱の座標
+/// * `x_size` - 迷路のX方向サイズ
+/// * `y_size` - 迷路のY方向サイズ
+///
+/// # Returns
+///
+/// 隣接セルの座標リスト
+pub fn generate_neighbour_cells(
+    pillar_point: &MazePoint,
+    x_size: u32,
+    y_size: u32,
+) -> Vec<MazePoint> {
+    let mut neighbour_cells = Vec::new();
+
+    // 上下左右の隣接セルを追加
+    if pillar_point.x() > 0 {
+        neighbour_cells.push(MazePoint::new(pillar_point.x() - 1, pillar_point.y()));
+    }
+    if pillar_point.x() + 1 < x_size {
+        neighbour_cells.push(MazePoint::new(pillar_point.x() + 1, pillar_point.y()));
+    }
+    if pillar_point.y() > 0 {
+        neighbour_cells.push(MazePoint::new(pillar_point.x(), pillar_point.y() - 1));
+    }
+    if pillar_point.y() + 1 < y_size {
+        neighbour_cells.push(MazePoint::new(pillar_point.x(), pillar_point.y() + 1));
+    }
+
+    neighbour_cells
+}
+
 /// 隣接柱候補を生成する
 ///
 /// 指定された柱の座標から距離2の位置（上下左右）にある隣接柱候補を生成します。

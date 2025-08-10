@@ -10,7 +10,6 @@ use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    os::linux::raw::stat,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
@@ -20,6 +19,7 @@ use crate::{
     maze_field::MazePoints,
     maze_point_status::{MazePointStatus, WallIdentifier},
     maze_thread::{maze_generate_monitor_thread, maze_generate_thread},
+    post_process::detect::{self, unreachable_path},
 };
 
 #[derive(Parser, Debug)]
@@ -186,6 +186,8 @@ fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::e
     }
 
     let maze_points = make_maze(x_size, y_size)?;
+    let unreachable_paths = detect::unreachable_path::detect_unreachable_paths(&maze_points)?;
+    info!("Unreachable paths: {:?}", unreachable_paths);
     save_maze_result_as_png(&maze_points, &full_path)?;
     Ok(())
 }
