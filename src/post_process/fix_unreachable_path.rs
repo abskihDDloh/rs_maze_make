@@ -1,214 +1,161 @@
-use crate::maze_field::MazePoints;
-use crate::maze_point::MazePoint;
+use crate::maze_field::{MazePoints, generate_adjacent_points};
+use crate::maze_point::{MazePoint, get_between_points};
 use crate::maze_point_status::MazePointStatus;
-use log::{debug, info};
+use crate::post_process::path_connectivity_graph::PathConnectivityGraph;
+use log::debug; // infoは未使用なので削除
 use petgraph::algo::connected_components;
 use petgraph::graph::{NodeIndex, UnGraph};
 use petgraph::visit::EdgeRef;
+use rand::seq::SliceRandom; // chooseメソッドに必要
+use rand::{Rng, thread_rng}; // RNGに必要
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-/// Pathの連結性を分析するためのグラフ構造
-#[derive(Debug)]
-pub struct PathConnectivityGraph {
-    /// petgraphのグラフインスタンス
-    graph: UnGraph<MazePoint, ()>,
-    /// MazePointからNodeIndexへのマッピング
-    point_to_node: HashMap<MazePoint, NodeIndex>,
-    /// NodeIndexからMazePointへのマッピング
-    node_to_point: HashMap<NodeIndex, MazePoint>,
-    /// 迷路のサイズ情報
-    x_size: u32,
-    y_size: u32,
+/// (1,1)から到達できないPathを検出する
+///
+/// この関数は以下の手順で到達不可能なPathを検出します：
+/// 1. (1,1)座標がPathとして存在するかチェック
+/// 2. DFS（深度優先探索）を使用して(1,1)から到達可能なすべてのPathを特定
+/// 3. 到達不可能なPathを収集して返す
+///
+/// # Returns
+///
+/// (1,1)から到達できないPath座標のベクタ、または(1,1)がPathでない場合はエラー
+///
+/// # Examples
+///
+/// ```rust
+/// let unreachable_paths = graph.find_unreachable_paths_from_start()?;
+/// if unreachable_paths.is_empty() {
+///     info!("All paths are reachable from (1,1)");
+/// } else {
+///     info!("Unreachable paths: {:?}", unreachable_paths);
+/// }
+/// ```
+fn find_unreachable_paths_from_start(
+    graph: &PathConnectivityGraph,
+) -> Result<Vec<MazePoint>, Box<dyn std::error::Error>> {
+    let start_point = MazePoint::new(1, 1);
+
+    // (1,1)がPathとして存在するかチェック
+    let start_node = graph.point_to_node.get(&start_point).ok_or_else(|| {
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Start point (1,1) is not a Path or does not exist",
+        )) as Box<dyn std::error::Error>
+    })?;
+
+    // DFSで(1,1)から到達可能なすべてのノードを見つける
+    let mut visited = HashSet::new();
+    let mut stack = vec![*start_node];
+
+    while let Some(current_node) = stack.pop() {
+        if visited.contains(&current_node) {
+            continue;
+        }
+
+        visited.insert(current_node);
+
+        // 隣接ノードをスタックに追加
+        for edge in graph.graph.edges(current_node) {
+            let neighbor = edge.target();
+            if !visited.contains(&neighbor) {
+                stack.push(neighbor);
+            }
+        }
+    }
+
+    // 到達不可能なPathを収集
+    let mut unreachable_paths = Vec::new();
+
+    for (point, &node_index) in &graph.point_to_node {
+        if !visited.contains(&node_index) {
+            unreachable_paths.push(*point);
+        }
+    }
+
+    // 統計情報の出力
+    let total_nodes = graph.point_to_node.len();
+    let reachable_count = visited.len();
+    let unreachable_count = unreachable_paths.len();
+
+    // 連結成分数を計算（petgraphのconnected_componentsを使用）
+    let component_count = connected_components(&graph.graph);
+
+    debug!("Total connected components: {}", component_count);
+    debug!("Total nodes: {}", total_nodes);
+    debug!("Reachable from start: {} nodes", reachable_count);
+    debug!("Unreachable from start: {} nodes", unreachable_count);
+    debug!("Unreachable paths: {:?}", unreachable_paths);
+
+    Ok(unreachable_paths)
 }
 
-impl PathConnectivityGraph {
-    #[cfg(test)]
-    pub fn new_empty(x_size: u32, y_size: u32) -> Self {
-        Self::new(x_size, y_size)
-    }
+/// グラフの統計情報を取得する
+///
+/// # Returns
+///
+/// (ノード数, エッジ数, 連結成分数)のタプル
+///
+/// # Examples
+///
+/// ```rust
+/// let (nodes, edges, components) = graph.get_statistics();
+/// println!("Graph has {} nodes, {} edges, {} components", nodes, edges, components);
+/// ```
+fn get_statistics(graph: &PathConnectivityGraph) -> (usize, usize, usize) {
+    let node_count = graph.graph.node_count();
+    let edge_count = graph.graph.edge_count();
+    let component_count = connected_components(&graph.graph);
 
-    /// 新しいPathConnectivityGraphを作成する
-    ///
-    /// # Arguments
-    ///
-    /// * `x_size` - 迷路のX方向サイズ
-    /// * `y_size` - 迷路のY方向サイズ
-    ///
-    /// # Returns
-    ///
-    /// 新しいPathConnectivityGraphインスタンス
-    fn new(x_size: u32, y_size: u32) -> Self {
-        Self {
-            graph: UnGraph::new_undirected(),
-            point_to_node: HashMap::new(),
-            node_to_point: HashMap::new(),
-            x_size,
-            y_size,
-        }
-    }
+    (node_count, edge_count, component_count)
+}
 
-    /// MazePointsからPathの連結性グラフを構築する
-    ///
-    /// この関数は以下の処理を行います：
-    /// 1. すべてのPath状態の座標をノードとして追加
-    /// 2. 隣接するPath同士をエッジで接続
-    ///
-    /// # Arguments
-    ///
-    /// * `maze_points` - 迷路データ
-    ///
-    /// # Returns
-    ///
-    /// 成功した場合は構築されたPathConnectivityGraph、失敗した場合はエラー
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use crate::maze_field::MazePoints;
-    /// use crate::post_process::detect_unreachable_path::PathConnectivityGraph;
-    ///
-    /// let maze_points = MazePoints::initialize_maze_points(7, 7)?;
-    /// let maze_guard = maze_points.read().unwrap();
-    /// let graph = PathConnectivityGraph::build_from_maze_points(&maze_guard)?;
-    /// ```
-    pub fn build_from_maze_points(
-        maze_points: &MazePoints,
-    ) -> Result<PathConnectivityGraph, Box<dyn std::error::Error>> {
-        let mut me: PathConnectivityGraph =
-            PathConnectivityGraph::new(maze_points.x_size(), maze_points.y_size());
+/// 各連結成分の詳細情報を取得する
+///
+/// DFS（深度優先探索）を使用してグラフを探索し、
+/// 各連結成分に含まれるPath座標のリストを構築します。
+///
+/// # Returns
+///
+/// 各連結成分に含まれるPath座標のベクタのベクタ
+///
+/// # Examples
+///
+/// ```rust
+/// let components = graph.get_connected_components();
+/// for (i, component) in components.iter().enumerate() {
+///     println!("Component {}: {} paths", i + 1, component.len());
+/// }
+/// ```
+fn get_connected_components(graph: &PathConnectivityGraph) -> Vec<Vec<MazePoint>> {
+    let mut components: Vec<Vec<MazePoint>> = Vec::new();
+    let mut visited = HashSet::new();
 
-        let all_points = maze_points.get_all_maze_points_clone();
-
-        // フェーズ1: すべてのPathをノードとして追加
-        for (point, status) in &all_points {
-            if matches!(status, MazePointStatus::Path) {
-                me.add_path_node(*point);
-            }
+    // すべてのノードを調べて連結成分を構築
+    for start_node in graph.graph.node_indices() {
+        if visited.contains(&start_node) {
+            continue; // 既に処理済み
         }
 
-        // フェーズ2: 隣接するPath同士をエッジで接続
-        for (point, status) in &all_points {
-            if matches!(status, MazePointStatus::Path) {
-                me.connect_adjacent_paths(point, &all_points)?;
-            }
-        }
+        let mut current_component = Vec::new();
+        let mut stack = vec![start_node];
 
-        Ok(me)
-    }
-
-    /// Pathノードをグラフに追加する
-    ///
-    /// # Arguments
-    ///
-    /// * `point` - 追加するPath座標
-    fn add_path_node(&mut self, point: MazePoint) {
-        if !self.point_to_node.contains_key(&point) {
-            let node_index = self.graph.add_node(point);
-            self.point_to_node.insert(point, node_index);
-            self.node_to_point.insert(node_index, point);
-        }
-    }
-
-    /// 指定座標の隣接Pathとの接続を確立する
-    ///
-    /// # Arguments
-    ///
-    /// * `point` - 基準となるPath座標
-    /// * `all_points` - 迷路の全座標とその状態
-    ///
-    /// # Returns
-    ///
-    /// 成功した場合はOk(())、失敗した場合はエラー
-    fn connect_adjacent_paths(
-        &mut self,
-        point: &MazePoint,
-        all_points: &HashMap<MazePoint, MazePointStatus>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let current_node = self.point_to_node.get(point).ok_or_else(|| {
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Node not found for point {:?}", point),
-            )) as Box<dyn std::error::Error>
-        })?;
-
-        // 4方向の隣接座標をチェック
-        let adjacent_offsets = [(0, 1), (0, -1), (1, 0), (-1, 0)];
-
-        for (dx, dy) in adjacent_offsets {
-            let new_x = point.x() as i32 + dx;
-            let new_y = point.y() as i32 + dy;
-
-            // 境界チェック
-            if new_x >= 0 && new_y >= 0 && new_x < self.x_size as i32 && new_y < self.y_size as i32
-            {
-                let adjacent_point = MazePoint::new(new_x as u32, new_y as u32);
-
-                // 隣接点がPathかチェック
-                if let Some(adjacent_status) = all_points.get(&adjacent_point)
-                    && matches!(adjacent_status, MazePointStatus::Path)
-                {
-                    // 隣接PathのNodeIndexを取得
-                    if let Some(&adjacent_node) = self.point_to_node.get(&adjacent_point) {
-                        // エッジが存在しない場合のみ追加
-                        if !self.graph.contains_edge(*current_node, adjacent_node) {
-                            self.graph.add_edge(*current_node, adjacent_node, ());
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// (1,1)から到達できないPathを検出する
-    ///
-    /// この関数は以下の手順で到達不可能なPathを検出します：
-    /// 1. (1,1)座標がPathとして存在するかチェック
-    /// 2. DFS（深度優先探索）を使用して(1,1)から到達可能なすべてのPathを特定
-    /// 3. 到達不可能なPathを収集して返す
-    ///
-    /// # Returns
-    ///
-    /// (1,1)から到達できないPath座標のベクタ、または(1,1)がPathでない場合はエラー
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// let unreachable_paths = graph.find_unreachable_paths_from_start()?;
-    /// if unreachable_paths.is_empty() {
-    ///     info!("All paths are reachable from (1,1)");
-    /// } else {
-    ///     info!("Unreachable paths: {:?}", unreachable_paths);
-    /// }
-    /// ```
-    pub fn find_unreachable_paths_from_start(
-        &self,
-    ) -> Result<Vec<MazePoint>, Box<dyn std::error::Error>> {
-        let start_point = MazePoint::new(1, 1);
-
-        // (1,1)がPathとして存在するかチェック
-        let start_node = self.point_to_node.get(&start_point).ok_or_else(|| {
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Start point (1,1) is not a Path or does not exist",
-            )) as Box<dyn std::error::Error>
-        })?;
-
-        // DFSで(1,1)から到達可能なすべてのノードを見つける
-        let mut visited = HashSet::new();
-        let mut stack = vec![*start_node];
-
-        while let Some(current_node) = stack.pop() {
-            if visited.contains(&current_node) {
+        // DFSで連結成分を探索
+        while let Some(node) = stack.pop() {
+            if visited.contains(&node) {
                 continue;
             }
 
-            visited.insert(current_node);
+            visited.insert(node);
 
-            // 隣接ノードをスタックに追加
-            for edge in self.graph.edges(current_node) {
+            // ノードをMazePointに変換して成分に追加
+            if let Some(point) = graph.node_to_point.get(&node) {
+                current_component.push(*point);
+            }
+
+            // 隣接ノードを探索対象に追加
+            for edge in graph.graph.edges(node) {
                 let neighbor = edge.target();
                 if !visited.contains(&neighbor) {
                     stack.push(neighbor);
@@ -216,145 +163,46 @@ impl PathConnectivityGraph {
             }
         }
 
-        // 到達不可能なPathを収集
-        let mut unreachable_paths = Vec::new();
-
-        for (point, &node_index) in &self.point_to_node {
-            if !visited.contains(&node_index) {
-                unreachable_paths.push(*point);
-            }
+        // 空でなければ成分として追加
+        if !current_component.is_empty() {
+            components.push(current_component);
         }
-
-        // 統計情報の出力
-        let total_nodes = self.point_to_node.len();
-        let reachable_count = visited.len();
-        let unreachable_count = unreachable_paths.len();
-
-        // 連結成分数を計算（petgraphのconnected_componentsを使用）
-        let component_count = connected_components(&self.graph);
-
-        debug!("Total connected components: {}", component_count);
-        debug!("Total nodes: {}", total_nodes);
-        debug!("Reachable from start: {} nodes", reachable_count);
-        debug!("Unreachable from start: {} nodes", unreachable_count);
-        debug!("Unreachable paths: {:?}", unreachable_paths);
-
-        Ok(unreachable_paths)
     }
 
-    /// グラフの統計情報を取得する
-    ///
-    /// # Returns
-    ///
-    /// (ノード数, エッジ数, 連結成分数)のタプル
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// let (nodes, edges, components) = graph.get_statistics();
-    /// println!("Graph has {} nodes, {} edges, {} components", nodes, edges, components);
-    /// ```
-    pub fn get_statistics(&self) -> (usize, usize, usize) {
-        let node_count = self.graph.node_count();
-        let edge_count = self.graph.edge_count();
-        let component_count = connected_components(&self.graph);
+    components
+}
 
-        (node_count, edge_count, component_count)
-    }
+/// 特定のPath座標が(1,1)から到達可能かチェックする
+///
+/// petgraphのhas_path_connectingアルゴリズムを使用して、
+/// スタート地点(1,1)から対象座標への経路が存在するかを判定します。
+///
+/// # Arguments
+///
+/// * `target` - チェック対象のPath座標
+///
+/// # Returns
+///
+/// (1,1)から到達可能な場合はtrue、そうでなければfalse
+///
+/// # Examples
+///
+/// ```rust
+/// let target_point = MazePoint::new(3, 3);
+/// if graph.is_reachable_from_start(&target_point) {
+///     println!("Point {:?} is reachable from start", target_point);
+/// }
+/// ```
+fn is_reachable_from_start(graph: &PathConnectivityGraph, target: &MazePoint) -> bool {
+    let start_point = MazePoint::new(1, 1);
 
-    /// 各連結成分の詳細情報を取得する
-    ///
-    /// DFS（深度優先探索）を使用してグラフを探索し、
-    /// 各連結成分に含まれるPath座標のリストを構築します。
-    ///
-    /// # Returns
-    ///
-    /// 各連結成分に含まれるPath座標のベクタのベクタ
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// let components = graph.get_connected_components();
-    /// for (i, component) in components.iter().enumerate() {
-    ///     println!("Component {}: {} paths", i + 1, component.len());
-    /// }
-    /// ```
-    pub fn get_connected_components(&self) -> Vec<Vec<MazePoint>> {
-        let mut components: Vec<Vec<MazePoint>> = Vec::new();
-        let mut visited = HashSet::new();
-
-        // すべてのノードを調べて連結成分を構築
-        for start_node in self.graph.node_indices() {
-            if visited.contains(&start_node) {
-                continue; // 既に処理済み
-            }
-
-            let mut current_component = Vec::new();
-            let mut stack = vec![start_node];
-
-            // DFSで連結成分を探索
-            while let Some(node) = stack.pop() {
-                if visited.contains(&node) {
-                    continue;
-                }
-
-                visited.insert(node);
-
-                // ノードをMazePointに変換して成分に追加
-                if let Some(point) = self.node_to_point.get(&node) {
-                    current_component.push(*point);
-                }
-
-                // 隣接ノードを探索対象に追加
-                for edge in self.graph.edges(node) {
-                    let neighbor = edge.target();
-                    if !visited.contains(&neighbor) {
-                        stack.push(neighbor);
-                    }
-                }
-            }
-
-            // 空でなければ成分として追加
-            if !current_component.is_empty() {
-                components.push(current_component);
-            }
-        }
-
-        components
-    }
-
-    /// 特定のPath座標が(1,1)から到達可能かチェックする
-    ///
-    /// petgraphのhas_path_connectingアルゴリズムを使用して、
-    /// スタート地点(1,1)から対象座標への経路が存在するかを判定します。
-    ///
-    /// # Arguments
-    ///
-    /// * `target` - チェック対象のPath座標
-    ///
-    /// # Returns
-    ///
-    /// (1,1)から到達可能な場合はtrue、そうでなければfalse
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// let target_point = MazePoint::new(3, 3);
-    /// if graph.is_reachable_from_start(&target_point) {
-    ///     println!("Point {:?} is reachable from start", target_point);
-    /// }
-    /// ```
-    pub fn is_reachable_from_start(&self, target: &MazePoint) -> bool {
-        let start_point = MazePoint::new(1, 1);
-
-        if let (Some(&start_node), Some(&target_node)) = (
-            self.point_to_node.get(&start_point),
-            self.point_to_node.get(target),
-        ) {
-            petgraph::algo::has_path_connecting(&self.graph, start_node, target_node, None)
-        } else {
-            false
-        }
+    if let (Some(&start_node), Some(&target_node)) = (
+        graph.point_to_node.get(&start_point),
+        graph.point_to_node.get(target),
+    ) {
+        petgraph::algo::has_path_connecting(&graph.graph, start_node, target_node, None)
+    } else {
+        false
     }
 }
 
@@ -518,21 +366,25 @@ fn detect_unreachable_paths_backend(
     // PathConnectivityGraphを構築
     let graph = PathConnectivityGraph::build_from_maze_points(maze_points)?;
     // 統計情報を取得
-    let statistics = graph.get_statistics();
+    let statistics = get_statistics(&graph);
 
     // 到達不可能なPathを検出
-    let unreachable_paths = graph.find_unreachable_paths_from_start()?;
+    let unreachable_paths = find_unreachable_paths_from_start(&graph)?;
 
     // 詳細な連結成分情報を直接初期化
-    let components = graph.get_connected_components();
+    let components = get_connected_components(&graph);
 
-    Ok(MazeStatisticsValue::new(
+    let unreachable_paths = MazeStatisticsValue::new(
         statistics.0,
         statistics.1,
         statistics.2,
         components,
         unreachable_paths,
-    ))
+    );
+
+    debug!("Unreachable paths: {:?}", unreachable_paths);
+
+    Ok(unreachable_paths)
 }
 
 /// MazePointsから迷路の連結性を分析する公開関数
@@ -586,16 +438,100 @@ pub fn detect_unreachable_paths(
     detect_unreachable_paths_backend(&maze_guard)
 }
 
+/// 孤立パスとメインパスの間の壁を1マス選んで通路に変更する。
+pub fn connect_unreachable_paths_to_main_path(
+    maze_points: &Arc<RwLock<MazePoints>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // 最初に統計情報を取得（読み取りロックのみ使用）
+    let pathinfo = detect_unreachable_paths(maze_points)?;
+
+    // 書き込みロックを取得
+    let mut maze_guard = maze_points.write().map_err(|_| {
+        Box::new(std::io::Error::other(
+            "Failed to acquire write lock for maze points",
+        ))
+    })?;
+
+    for orphan_path_points in pathinfo.orphan_paths_points() {
+        let mut orphan_path_vec: Vec<MazePoint> = orphan_path_points.iter().cloned().collect();
+        let mut connection_found = false;
+
+        while !orphan_path_vec.is_empty() {
+            // ランダムに点を選択
+            let mut rng = rand::rng();
+            let random_index = rng.random_range(0..orphan_path_vec.len());
+            let selected_point = orphan_path_vec[random_index];
+            orphan_path_vec.remove(random_index);
+
+            let adjacent_points =
+                generate_adjacent_points(&selected_point, maze_guard.x_size(), maze_guard.y_size());
+
+            for adjacent_point in adjacent_points {
+                if pathinfo.main_path_points().contains(&adjacent_point) {
+                    // 中間点を計算
+                    let middle_points = get_between_points(&selected_point, &adjacent_point);
+
+                    // 中間点が正確に3つであることを確認
+                    if middle_points.len() == 3 {
+                        // 中間点を取得（3つの点のうち真ん中の点）
+                        let middle_point = middle_points[1];
+
+                        // 中間点が壁であることを確認
+                        if let Some(middle_point_status) =
+                            maze_guard.get_maze_point_status(&middle_point)
+                            && middle_point_status.is_wall()
+                        {
+                            // 壁であれば通路に変更 - 適切なエラーハンドリング
+                            match maze_guard.wall_to_path(&middle_point) {
+                                Ok(_) => {
+                                    debug!(
+                                        "Successfully connected orphan path to main path via {:?}",
+                                        middle_point
+                                    );
+                                    connection_found = true;
+                                    break;
+                                }
+                                Err(e) => {
+                                    debug!(
+                                        "Failed to convert wall to path at {:?}: {}",
+                                        middle_point, e
+                                    );
+                                    // エラーの場合は他の接続を試す
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if connection_found {
+                break;
+            }
+        }
+
+        if !connection_found {
+            debug!(
+                "Warning: Could not connect orphan path with {} points",
+                orphan_path_points.len() // orphan_path_vecではなく元の値を使用
+            );
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::maze_field::MazePoints;
+    use log::info;
 
     #[test]
     fn test_path_connectivity_graph_creation() {
         // 空のグラフを作成してテスト
         let graph = PathConnectivityGraph::new_empty(7, 7);
-        let (node_count, edge_count, component_count) = graph.get_statistics();
+        let (node_count, edge_count, component_count) = get_statistics(&graph);
 
         assert_eq!(node_count, 0);
         assert_eq!(edge_count, 0);
@@ -610,7 +546,7 @@ mod tests {
         // MazePointsからグラフを構築
         let graph = PathConnectivityGraph::build_from_maze_points(&maze_guard)?;
 
-        let (node_count, edge_count, component_count) = graph.get_statistics();
+        let (node_count, edge_count, component_count) = get_statistics(&graph);
 
         // 7x7迷路では通路が存在するはず
         assert!(node_count > 0);
@@ -685,7 +621,7 @@ mod tests {
 
         // (1,1)がPathとして存在する場合、自分自身は到達可能であるべき
         if graph.point_to_node.contains_key(&start_point) {
-            assert!(graph.is_reachable_from_start(&start_point));
+            assert!(is_reachable_from_start(&graph, &start_point));
         }
 
         Ok(())
@@ -700,7 +636,7 @@ mod tests {
         // MazePointsからグラフを構築
         let graph = PathConnectivityGraph::build_from_maze_points(&maze_guard)?;
 
-        let components = graph.get_connected_components();
+        let components = get_connected_components(&graph);
 
         info!("Components in 5x5 maze:");
         for (i, component) in components.iter().enumerate() {
@@ -721,7 +657,7 @@ mod tests {
         // MazePointsからグラフを構築
         let graph = PathConnectivityGraph::build_from_maze_points(&maze_guard)?;
 
-        let (nodes, edges, components) = graph.get_statistics();
+        let (nodes, edges, components) = get_statistics(&graph);
 
         // 基本的な妥当性チェック
         assert!(nodes > 0, "Should have at least one path node");
@@ -804,7 +740,7 @@ mod tests {
 
         // グラフを構築して到達不可能パスを検出
         let graph = PathConnectivityGraph::build_from_maze_points(&maze_guard)?;
-        let unreachable_paths = graph.find_unreachable_paths_from_start()?;
+        let unreachable_paths = find_unreachable_paths_from_start(&graph)?;
 
         info!("Found {} unreachable paths", unreachable_paths.len());
 
@@ -815,7 +751,7 @@ mod tests {
             // 各到達不可能パスが実際に到達不可能かテスト
             for path in &unreachable_paths {
                 assert!(
-                    !graph.is_reachable_from_start(path),
+                    !is_reachable_from_start(&graph, path),
                     "Path {:?} should not be reachable from start",
                     path
                 );
@@ -861,7 +797,7 @@ mod tests {
         let maze_guard = maze_points.read().unwrap();
 
         let graph = PathConnectivityGraph::build_from_maze_points(&maze_guard)?;
-        let components = graph.get_connected_components();
+        let components = get_connected_components(&graph);
 
         info!("Detailed component analysis:");
         for (i, component) in components.iter().enumerate() {
@@ -912,6 +848,39 @@ mod tests {
                     "If orphan paths exist, main path should also exist"
                 );
             }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_connect_unreachable_paths_to_main_path() -> Result<(), Box<dyn std::error::Error>> {
+        let maze_points = MazePoints::initialize_maze_points(15, 15)?;
+
+        // 接続前の統計を取得
+        let before_stats = detect_unreachable_paths(&maze_points)?;
+        let before_orphan_count = before_stats.orphan_paths_points().len();
+
+        info!("Before connection - Orphan groups: {}", before_orphan_count);
+
+        // 孤立パスが存在する場合のみテスト実行
+        if before_orphan_count > 0 {
+            // 孤立パスを接続
+            connect_unreachable_paths_to_main_path(&maze_points)?;
+
+            // 接続後の統計を取得
+            let after_stats = detect_unreachable_paths(&maze_points)?;
+            let after_orphan_count = after_stats.orphan_paths_points().len();
+
+            info!("After connection - Orphan groups: {}", after_orphan_count);
+
+            // 孤立パスが減少していることを期待（完全に0になるとは限らない）
+            assert!(
+                after_orphan_count <= before_orphan_count,
+                "Orphan path count should not increase after connection attempts"
+            );
+        } else {
+            info!("No orphan paths found, skipping connection test");
         }
 
         Ok(())

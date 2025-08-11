@@ -17,9 +17,13 @@ use threadpool::ThreadPool;
 
 use crate::{
     maze_field::MazePoints,
+    maze_point::MazePoint,
     maze_point_status::{MazePointStatus, WallIdentifier},
     maze_thread::{maze_generate_monitor_thread, maze_generate_thread},
-    post_process::detect::{self, unreachable_path},
+    post_process::{
+        fix_loop_path::extract_branch_merge_key_points_from_maze,
+        fix_unreachable_path::{connect_unreachable_paths_to_main_path, detect_unreachable_paths},
+    },
 };
 
 #[derive(Parser, Debug)]
@@ -112,17 +116,12 @@ fn make_maze(
 }
 
 fn save_maze_result_as_png(
-    maze_points: &Arc<RwLock<MazePoints>>,
+    maze_points: HashMap<MazePoint, MazePointStatus>,
+    width: u32,
+    height: u32,
     file_path: &PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let maze_guard = maze_points.read().map_err(|_| {
-        Box::new(std::io::Error::other(
-            "Failed to acquire read lock for result display",
-        ))
-    })?;
-
-    let (width, height) = (maze_guard.x_size(), maze_guard.y_size());
-    let maze_i = maze_guard.get_all_maze_points_clone();
+    let maze_i = maze_points.clone();
     let mut wall_identifiers: HashSet<WallIdentifier> = HashSet::new();
     for (_point, status) in maze_i {
         if status.is_wall()
@@ -131,7 +130,7 @@ fn save_maze_result_as_png(
             wall_identifiers.insert(*identifier);
         }
     }
-    let maze = maze_guard.get_all_maze_points_clone();
+    let maze = maze_points.clone();
     let mut img = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::new(width, height);
     let mut previous_color_list: HashSet<image::Rgba<u8>> = HashSet::new();
     let mut wall_color_list: HashMap<WallIdentifier, image::Rgba<u8>> = HashMap::new();
@@ -141,9 +140,9 @@ fn save_maze_result_as_png(
         loop {
             let mut rng = rand::rng();
             let wall_color = image::Rgba([
-                rng.random_range(0..=255),
-                rng.random_range(0..=255),
-                rng.random_range(0..=255),
+                rng.random_range(2..=254),
+                rng.random_range(2..=254),
+                rng.random_range(2..=254),
                 255u8,
             ]);
             if !previous_color_list.contains(&wall_color) {
@@ -161,8 +160,9 @@ fn save_maze_result_as_png(
         wall_color_list.len()
     );
     for (point, status) in maze {
+        let path_color = image::Rgba([255u8, 255u8, 255u8, 255u8]); // 白
         let color = match status {
-            MazePointStatus::Path => image::Rgba([255u8, 255u8, 255u8, 255u8]), // 白
+            MazePointStatus::Path => path_color,
             MazePointStatus::Wall(..) => wall_color_list
                 .get(status.get_wall_identifier().unwrap())
                 .cloned()
@@ -186,9 +186,23 @@ fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::e
     }
 
     let maze_points = make_maze(x_size, y_size)?;
-    let unreachable_paths = detect::unreachable_path::detect_unreachable_paths(&maze_points)?;
+    connect_unreachable_paths_to_main_path(&maze_points)?;
+    let unreachable_paths = detect_unreachable_paths(&maze_points)?;
     info!("Unreachable paths: {:?}", unreachable_paths);
-    save_maze_result_as_png(&maze_points, &full_path)?;
+    let res = extract_branch_merge_key_points_from_maze(&maze_points)?;
+    info!("Generated branch-merge paths: {:?}", res);
+
+    let maze_guard = maze_points.read().map_err(|_| {
+        Box::new(std::io::Error::other(
+            "Failed to acquire read lock for maze points",
+        )) as Box<dyn std::error::Error>
+    })?;
+    save_maze_result_as_png(
+        maze_guard.get_all_maze_points_clone(),
+        maze_guard.x_size(),
+        maze_guard.y_size(),
+        &full_path,
+    )?;
     Ok(())
 }
 
@@ -332,7 +346,12 @@ mod tests {
         fs::write(&file_path, b"").expect("Failed to create test file");
 
         // PNG保存関数をテスト
-        let result = save_maze_result_as_png(&maze_points, &file_path);
+        let maze_guard = maze_points.read().expect("Failed to acquire read lock");
+        let maze_hashmap = maze_guard.get_all_maze_points_clone();
+        let width = maze_guard.x_size();
+        let height = maze_guard.y_size();
+
+        let result = save_maze_result_as_png(maze_hashmap, width, height, &file_path);
 
         // 結果の検証
         assert!(

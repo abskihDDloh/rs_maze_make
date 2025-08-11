@@ -55,7 +55,6 @@ pub fn maze_generate_thread(
         loop {
             // pillar_stackの最後の要素を取得する。
             if let Some(current_pillar) = pillar_stack.last() {
-                
                 if surrounded_pillars.contains(current_pillar) {
                     // 囲まれた柱はスキップ
                     debug!(
@@ -70,7 +69,7 @@ pub fn maze_generate_thread(
                 match extend_pillar_to_adjacent_pillar(
                     maze_points,
                     *current_pillar, // &MazePoint → MazePoint
-                    identifier,     // &WallIdentifier → WallIdentifier
+                    identifier,      // &WallIdentifier → WallIdentifier
                 ) {
                     Ok(new_point) => {
                         if new_point.is_next_pillar() {
@@ -132,7 +131,7 @@ pub fn maze_generate_monitor_thread(
                 maze_points_read.x_size(),
                 maze_points_read.y_size(),
                 maze_points_read.get_all_pillar_points_clone().len(), // 修正: 正しいメソッド名
-                maze_points_read.get_extended_pillar_points_clone().len(),
+                maze_points_read.get_extending_pillar_points_clone().len(),
                 maze_points_read.all_pillar_seeked_flag(),
             )
         }; // ここでロック解除

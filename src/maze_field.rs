@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    maze_point::MazePoint,
+    maze_point::{MazePoint, get_between_points},
     maze_point_status::{MazePointStatus, WallIdentifier, WallType},
 };
 use rand::Rng;
@@ -60,6 +60,10 @@ impl MazePoints {
         self.all_maze_points.clone()
     }
 
+    pub fn get_maze_point_status(&self, point: &MazePoint) -> Option<MazePointStatus> {
+        self.all_maze_points.get(point).cloned()
+    }
+
     /// 迷路の柱座標集合のクローンを返す
     ///
     /// # Returns
@@ -69,12 +73,12 @@ impl MazePoints {
         self.pillar_points.clone()
     }
 
-    /// 拡張済み柱座標集合のクローンを返す
+    /// 拡張処理開始済み柱座標のHashSetのクローンを返す
     ///
     /// # Returns
     ///
-    /// 拡張済み柱座標のHashSetのクローン
-    pub fn get_extended_pillar_points_clone(&self) -> HashSet<MazePoint> {
+    /// 拡張処理開始済み柱座標のHashSetのクローン
+    pub fn get_extending_pillar_points_clone(&self) -> HashSet<MazePoint> {
         self.extending_pillar_points.clone()
     }
 
@@ -264,29 +268,53 @@ impl MazePoints {
     ///
     /// * 中間点が見つからない場合
     /// * 中間点がPath状態でない場合
-    fn mark_middle_point_as_wall(
+   pub fn path_to_wall(
         &mut self,
-        middle_point: &MazePoint,
+        point: &MazePoint,
         identifier: &WallIdentifier,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if let Some(status) = self.all_maze_points.get(middle_point) {
+        if let Some(status) = self.all_maze_points.get(point) {
             match status {
                 MazePointStatus::Path => {
                     self.all_maze_points.insert(
-                        *middle_point,
+                        *point,
                         MazePointStatus::Wall(WallType::Wall, Some(*identifier)),
                     );
                     Ok(())
                 }
                 _ => Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Middle point {:?} is not a Path", middle_point),
+                    format!("Middle point {:?} is not a Path", point),
                 ))),
             }
         } else {
             Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("Middle point {:?} not found", middle_point),
+                format!("Middle point {:?} not found", point),
+            )))
+        }
+    }
+
+    /// 壁をPathに変更する
+    pub fn wall_to_path(
+        &mut self,
+        point: &MazePoint,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if let Some(status) = self.all_maze_points.get(point) {
+            match status {
+                MazePointStatus::Wall(_, _) => {
+                    self.all_maze_points.insert(*point, MazePointStatus::Path);
+                    Ok(())
+                }
+                _ => Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Cell {:?} is not a Wall", point),
+                ))),
+            }
+        } else {
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Cell {:?} not found", point),
             )))
         }
     }
@@ -311,6 +339,7 @@ impl MazePoints {
     /// * 中間点の壁化に失敗した場合
     /// * 拡張先の柱が見つからない場合
     /// * 予期しない柱の状態の場合
+    /// * 中間点が正確に1つでない場合
     fn execute_pillar_extension(
         &mut self,
         from_pillar: &MazePoint,
@@ -318,13 +347,38 @@ impl MazePoints {
         identifier: &WallIdentifier,
     ) -> Result<SeekAdjacentPillarOkResult, Box<dyn std::error::Error + Send + Sync>> {
         // 中間点を計算
-        let middle_point = MazePoint::new(
-            (from_pillar.x() + to_pillar.x()) / 2,
-            (from_pillar.y() + to_pillar.y()) / 2,
-        );
+        let middle_points = get_between_points(from_pillar, to_pillar);
+
+        // 中間点が正確に1つであることを確認
+        if middle_points.len() != 3 {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Expected exactly 3 points between {:?} and {:?}, but got {} points: {:?}",
+                    from_pillar,
+                    to_pillar,
+                    middle_points.len(),
+                    middle_points
+                ),
+            )));
+        }
+
+        // 中間点を取得（3つの点のうち真ん中の点）
+        let middle_point = middle_points[1];
+
+        // from_pillarとto_pillarが含まれていることを確認
+        if !middle_points.contains(from_pillar) || !middle_points.contains(to_pillar) {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "get_between_points result does not contain expected pillars. From: {:?}, To: {:?}, Points: {:?}",
+                    from_pillar, to_pillar, middle_points
+                ),
+            )));
+        }
 
         // 中間点を壁に変更
-        self.mark_middle_point_as_wall(&middle_point, identifier)?;
+        self.path_to_wall(&middle_point, identifier)?;
 
         // 拡張先の状態を確認して適切に処理
         if let Some(status) = self.all_maze_points.get(to_pillar).cloned() {
@@ -787,7 +841,7 @@ pub fn extend_pillar_to_adjacent_pillar(
     }; // ここで読み取りロック解放
 
     // フェーズ2: 隣接柱候補の生成（ロック外）
-    let mut adjacent_pillars = generate_adjacent_pillars(&pillar_point_copy, x_size, y_size);
+    let mut adjacent_pillars = generate_adjacent_points(&pillar_point_copy, x_size, y_size);
 
     // フェーズ3: 書き込みロックで拡張処理実行
     let mut maze_points_guard = maze_points.write().map_err(|_| {
@@ -848,75 +902,31 @@ fn select_valid_adjacent_pillar(
     None
 }
 
-/// 隣接セルを生成する
+/// 隣接セル候補のリストを生成する
 ///
-/// # Arguments
-///
-/// * `pillar_point` - 基準となる柱の座標
-/// * `x_size` - 迷路のX方向サイズ
-/// * `y_size` - 迷路のY方向サイズ
-///
-/// # Returns
-///
-/// 隣接セルの座標リスト
-pub fn generate_neighbour_cells(
-    pillar_point: &MazePoint,
-    x_size: u32,
-    y_size: u32,
-) -> Vec<MazePoint> {
-    let mut neighbour_cells = Vec::new();
-
-    // 上下左右の隣接セルを追加
-    if pillar_point.x() > 0 {
-        neighbour_cells.push(MazePoint::new(pillar_point.x() - 1, pillar_point.y()));
-    }
-    if pillar_point.x() + 1 < x_size {
-        neighbour_cells.push(MazePoint::new(pillar_point.x() + 1, pillar_point.y()));
-    }
-    if pillar_point.y() > 0 {
-        neighbour_cells.push(MazePoint::new(pillar_point.x(), pillar_point.y() - 1));
-    }
-    if pillar_point.y() + 1 < y_size {
-        neighbour_cells.push(MazePoint::new(pillar_point.x(), pillar_point.y() + 1));
-    }
-
-    neighbour_cells
-}
-
-/// 隣接柱候補を生成する
-///
-/// 指定された柱の座標から距離2の位置（上下左右）にある隣接柱候補を生成します。
+/// 指定された座標から距離2の位置（上下左右）にある隣接セル候補を生成します。
 /// 迷路の境界を考慮して、有効な座標のみを返します。
 ///
 /// # Arguments
 ///
-/// * `pillar_point` - 基準となる柱の座標
+/// * `center_point` - 基準となるセルの座標
 /// * `x_size` - 迷路のX方向サイズ
 /// * `y_size` - 迷路のY方向サイズ
 ///
 /// # Returns
 ///
-/// 隣接柱候補の座標リスト
-fn generate_adjacent_pillars(pillar_point: &MazePoint, x_size: u32, y_size: u32) -> Vec<MazePoint> {
-    let mut adjacent_pillars = Vec::new();
-
-    // x方向の隣接点 (x±2, y)
-    if pillar_point.x() >= 2 {
-        adjacent_pillars.push(MazePoint::new(pillar_point.x() - 2, pillar_point.y()));
-    }
-    if pillar_point.x() + 2 < x_size {
-        adjacent_pillars.push(MazePoint::new(pillar_point.x() + 2, pillar_point.y()));
-    }
-
-    // y方向の隣接点 (x, y±2)
-    if pillar_point.y() >= 2 {
-        adjacent_pillars.push(MazePoint::new(pillar_point.x(), pillar_point.y() - 2));
-    }
-    if pillar_point.y() + 2 < y_size {
-        adjacent_pillars.push(MazePoint::new(pillar_point.x(), pillar_point.y() + 2));
-    }
-
-    adjacent_pillars
+/// 隣接セル候補の座標リスト
+pub fn generate_adjacent_points(
+    center_point: &MazePoint,
+    x_size: u32,
+    y_size: u32,
+) -> Vec<MazePoint> {
+    let adjacent_points_set = center_point.generate_adjacent_maze_points(2);
+    let adjacent_points: Vec<MazePoint> = adjacent_points_set
+        .into_iter()
+        .filter(|point| point.x() < x_size && point.y() < y_size)
+        .collect();
+    adjacent_points
 }
 
 /// 選択された柱の状態を確認する
@@ -1055,7 +1065,7 @@ mod tests {
     #[test]
     fn test_generate_adjacent_pillars_center() {
         let center = MazePoint::new(4, 4);
-        let adjacent = generate_adjacent_pillars(&center, 9, 9);
+        let adjacent = generate_adjacent_points(&center, 9, 9);
 
         // 4方向の隣接点が生成されることを確認
         assert_eq!(adjacent.len(), 4);
@@ -1069,7 +1079,7 @@ mod tests {
     fn test_generate_adjacent_pillars_boundary() {
         // 境界近くでの隣接点生成テスト
         let corner = MazePoint::new(2, 2);
-        let adjacent = generate_adjacent_pillars(&corner, 9, 9);
+        let adjacent = generate_adjacent_points(&corner, 9, 9);
 
         assert_eq!(adjacent.len(), 4);
         assert!(adjacent.contains(&MazePoint::new(0, 2))); // 左
@@ -1082,17 +1092,17 @@ mod tests {
     fn test_generate_adjacent_pillars_edge_cases() {
         // 迷路の端での隣接点生成
         let edge_point = MazePoint::new(0, 2);
-        let adjacent = generate_adjacent_pillars(&edge_point, 7, 7);
+        let adjacent = generate_adjacent_points(&edge_point, 7, 7);
         assert_eq!(adjacent.len(), 3); // 右と上下のみ
 
         // 角での隣接点生成
         let corner_point = MazePoint::new(0, 0);
-        let adjacent = generate_adjacent_pillars(&corner_point, 7, 7);
+        let adjacent = generate_adjacent_points(&corner_point, 7, 7);
         assert_eq!(adjacent.len(), 2); // 右と下のみ
 
         // 最大座標での隣接点生成
         let max_point = MazePoint::new(6, 6);
-        let adjacent = generate_adjacent_pillars(&max_point, 7, 7);
+        let adjacent = generate_adjacent_points(&max_point, 7, 7);
         assert_eq!(adjacent.len(), 2); // 左と上のみ
     }
 
@@ -1100,7 +1110,7 @@ mod tests {
     fn test_generate_adjacent_pillars_small_maze() {
         // 最小サイズでの隣接点生成
         let center = MazePoint::new(2, 2);
-        let adjacent = generate_adjacent_pillars(&center, 5, 5);
+        let adjacent = generate_adjacent_points(&center, 5, 5);
         assert_eq!(adjacent.len(), 4); // 右と下のみ（境界制約）
     }
 
@@ -1959,7 +1969,7 @@ mod tests {
         ];
 
         for (corner, expected_count) in corners {
-            let adjacents = generate_adjacent_pillars(&corner, 5, 5);
+            let adjacents = generate_adjacent_points(&corner, 5, 5);
             assert_eq!(
                 adjacents.len(),
                 expected_count,
@@ -1979,7 +1989,7 @@ mod tests {
         ];
 
         for (edge, expected_count) in edges {
-            let adjacents = generate_adjacent_pillars(&edge, 5, 5);
+            let adjacents = generate_adjacent_points(&edge, 5, 5);
             assert_eq!(
                 adjacents.len(),
                 expected_count,
@@ -1992,7 +2002,7 @@ mod tests {
 
         // 中央の座標での隣接点生成テスト
         let center = MazePoint::new(2, 2);
-        let adjacents = generate_adjacent_pillars(&center, 5, 5);
+        let adjacents = generate_adjacent_points(&center, 5, 5);
         assert_eq!(
             adjacents.len(),
             4,
