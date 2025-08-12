@@ -7,6 +7,7 @@ use crate::{
     maze_point::{MazePoint, get_between_points},
     maze_point_status::{MazePointStatus, WallIdentifier, WallType},
 };
+use log::debug;
 use rand::Rng;
 
 /// 迷路の構成要素とその状態を管理する構造体
@@ -268,7 +269,7 @@ impl MazePoints {
     ///
     /// * 中間点が見つからない場合
     /// * 中間点がPath状態でない場合
-   pub fn path_to_wall(
+    pub fn path_to_wall(
         &mut self,
         point: &MazePoint,
         identifier: &WallIdentifier,
@@ -859,6 +860,7 @@ pub fn extend_pillar_to_adjacent_pillar(
         }
         None => {
             // 利用可能な隣接柱がない場合
+
             Ok(SeekAdjacentPillarOkResult::new(
                 SeekAdjacentPillarOkState::SurroundedPillar,
                 pillar_point,

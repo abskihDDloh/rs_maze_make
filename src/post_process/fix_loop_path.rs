@@ -419,8 +419,8 @@ pub fn detect_branch_merge_pairs(
             // 分岐点から合流点への複数経路を検出
             let path_count = count_distinct_paths(graph, branch_node, merge_node)?;
 
-            if path_count >= 2 {
-                if let (Some(&branch_point), Some(&merge_point)) = (
+            if path_count >= 2
+                && let (Some(&branch_point), Some(&merge_point)) = (
                     graph.node_to_point.get(&branch_node),
                     graph.node_to_point.get(&merge_node),
                 ) {
@@ -436,7 +436,6 @@ pub fn detect_branch_merge_pairs(
                         processed_pairs.insert((branch_point, merge_point));
                     }
                 }
-            }
         }
     }
 

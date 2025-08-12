@@ -22,7 +22,7 @@ impl MazePoint {
         self.y
     }
 
-    pub fn generate_adjacent_maze_points(&self, distance: u32) -> HashSet<MazePoint> {
+    pub fn generate_adjacent_maze_points(&self, distance: u32) -> Vec<MazePoint> {
         // 上下左右に指定された距離だけ離れた位置を生成
         // オーバーフローの場合は最大値、アンダーフローの場合は最小値
         let mut points = HashSet::from([
@@ -35,7 +35,7 @@ impl MazePoint {
         if points.contains(self) {
             points.remove(self);
         }
-        points
+        points.into_iter().collect()
     }
 }
 

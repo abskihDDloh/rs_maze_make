@@ -186,11 +186,6 @@ fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::e
     }
 
     let maze_points = make_maze(x_size, y_size)?;
-    connect_unreachable_paths_to_main_path(&maze_points)?;
-    let unreachable_paths = detect_unreachable_paths(&maze_points)?;
-    info!("Unreachable paths: {:?}", unreachable_paths);
-    let res = extract_branch_merge_key_points_from_maze(&maze_points)?;
-    info!("Generated branch-merge paths: {:?}", res);
 
     let maze_guard = maze_points.read().map_err(|_| {
         Box::new(std::io::Error::other(
@@ -203,6 +198,13 @@ fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::e
         maze_guard.y_size(),
         &full_path,
     )?;
+
+    connect_unreachable_paths_to_main_path(&maze_points)?;
+    let unreachable_paths = detect_unreachable_paths(&maze_points)?;
+    info!("Unreachable paths: {:?}", unreachable_paths);
+    let res = extract_branch_merge_key_points_from_maze(&maze_points)?;
+    info!("Generated branch-merge paths: {:?}", res);
+
     Ok(())
 }
 
