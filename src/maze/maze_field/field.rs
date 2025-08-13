@@ -16,11 +16,11 @@ use crate::maze::{
     maze_field::extend_result::ExtendResult,
 };
 
-/// 迷路の構成要素とその状態を管理する構造体
+/// 迷路の全座標点・柱・外壁などの状態を管理する構造体。
 ///
-/// この構造体は迷路の各座標点の状態（道、壁、柱）を管理し、
-/// 迷路生成アルゴリズムの進行状況を追跡します。
-/// 新しいMazePointStatusのメソッドを活用して、より安全で保守しやすい実装になっています。
+/// - 各座標点の状態（道・壁・柱・外壁）を保持し、迷路生成アルゴリズムの進行を管理します。
+/// - スレッドセーフな迷路生成のためのデータ構造です。
+/// - 新しい `MazePointStatus` のメソッドを活用し、安全で保守しやすい実装です。
 #[derive(Debug, Clone)]
 pub(crate) struct Field {
     /// 迷路のX方向の大きさ
@@ -46,29 +46,17 @@ pub(crate) struct Field {
 }
 
 impl Field {
-    /// 迷路のX方向の大きさを返す
-    ///
-    /// # Returns
-    ///
-    /// 迷路のX方向の大きさ
+    /// 迷路のX方向の大きさを返します。
     pub fn x_size(&self) -> u32 {
         self.x_size
     }
 
-    /// 迷路のY方向の大きさを返す
-    ///
-    /// # Returns
-    ///
-    /// 迷路のY方向の大きさ
+    /// 迷路のY方向の大きさを返します。
     pub fn y_size(&self) -> u32 {
         self.y_size
     }
 
-    /// 迷路の全座標点とその状態のクローンを返す
-    ///
-    /// # Returns
-    ///
-    /// 迷路の全座標点とその状態のHashMapのクローン
+    /// 迷路の全座標点とその状態のクローンを返します。
     pub fn get_all_maze_points_clone(&self) -> HashMap<MazePoint, MazePointStatus> {
         self.all_maze_points.clone()
     }
@@ -77,36 +65,17 @@ impl Field {
         self.all_maze_points.get(point).cloned()
     }
 
-    /// 迷路の柱座標集合のクローンを返す
-    ///
-    /// # Returns
-    ///
-    /// 迷路の柱座標のHashSetのクローン
+    /// 迷路の柱座標集合のクローンを返します。
     pub fn get_pillar_points_clone(&self) -> HashSet<MazePoint> {
         self.pillar_points.clone()
     }
 
-    /// 拡張処理開始済み柱座標のHashSetのクローンを返す
-    ///
-    /// # Returns
-    ///
-    /// 拡張処理開始済み柱座標のHashSetのクローン
+    /// 拡張処理中の柱座標集合のクローンを返します。
     pub fn get_extending_pillar_points_clone(&self) -> HashSet<MazePoint> {
         self.extending_pillar_points.clone()
     }
 
-    /// 利用可能な柱の候補を効率的に取得する（読み取り専用）
-    ///
-    /// `MazePointStatus::is_not_checked_wall()` を使用して判定を簡潔にします。
-    /// この関数は読み取り専用の操作で、柱の状態を変更しません。
-    ///
-    /// # Arguments
-    ///
-    /// * `exclude_set` - 除外する柱の座標集合
-    ///
-    /// # Returns
-    ///
-    /// (all_pillar_seeked_flag, 利用可能な柱の座標リスト)
+    /// 利用可能な柱の座標リストを返します（拡張中以外）。
     pub fn get_available_pillar_points(&self) -> Vec<MazePoint> {
         // pillar_pointsに含まれるが、extending_pillar_pointsに含まれない柱をフィルタリング
         self.pillar_points
@@ -124,7 +93,7 @@ impl Field {
         self.extending_start_points.clone()
     }
 
-    /// get_available_pillar_points()の結果からランダムに1つ選択する。
+    /// 利用可能な柱からランダムに1つ選択します。
     pub fn get_random_available_pillar_point(&self) -> Option<MazePoint> {
         let available_points = self.get_available_pillar_points();
         if available_points.is_empty() {
@@ -143,7 +112,7 @@ impl Field {
             .collect()
     }
 
-    /// get_available_start_points()の結果からランダムで1つ選択する。
+    /// 利用可能な外壁開始点からランダムに1つ選択します。
     pub fn get_random_available_start_point(&self) -> Option<MazePoint> {
         let available_points = self.get_available_start_points();
         if available_points.is_empty() {
@@ -164,40 +133,28 @@ impl Field {
         adjacent_pillars
     }
 
-    /// すべての柱が探索された場合はtrueを返す
-    ///
-    /// # Returns
-    ///
-    /// すべての柱が探索済みの場合はtrue、そうでなければfalse
+    /// すべての柱が探索済みならtrueを返します。
     pub fn all_pillar_seeked_flag(&self) -> bool {
         self.pillar_points.len() == self.extending_pillar_points.len()
     }
 
-    /// 迷路データを初期化し、スレッドセーフなラッパーで返す
+    /// 指定サイズの迷路データを初期化し、スレッドセーフなラッパーで返します。
     ///
-    /// この関数は指定されたサイズの迷路を初期化します。迷路の境界は外壁で囲まれ、
-    /// 内部の偶数座標には柱が配置されます。残りの座標は通路として初期化されます。
-    /// 新しいMazePointStatusのコンストラクタメソッドを使用して、型安全な初期化を行います。
+    /// # 引数
+    /// * `x_size` - X方向サイズ（5以上の奇数）
+    /// * `y_size` - Y方向サイズ（5以上の奇数）
     ///
-    /// # Arguments
+    /// # 戻り値
+    /// * `Ok(Arc<RwLock<Field>>)` - 初期化済み迷路データ
+    /// * `Err(_)` - サイズ不正等
     ///
-    /// * `x_size` - 迷路のX方向の大きさ（5以上の奇数である必要があります）
-    /// * `y_size` - 迷路のY方向の大きさ（5以上の奇数である必要があります）
+    /// # エラー条件
+    /// - サイズが5未満または偶数
+    /// - i32の範囲外
     ///
-    /// # Returns
-    ///
-    /// 初期化された迷路データのスレッドセーフなラッパー、またはエラー
-    ///
-    /// # Errors
-    ///
-    /// * サイズが5未満の場合
-    /// * サイズが偶数の場合
-    /// * サイズがi32の範囲を超える場合
-    ///
-    /// # Examples
-    ///
+    /// # 使用例
     /// ```rust
-    /// let maze_points = MazePoints::initialize_maze_points(7, 7)?;
+    /// let maze = Field::initialize_maze_points(7, 7)?;
     /// ```
     pub fn initialize_maze_points(
         x_size: u32,
@@ -235,8 +192,7 @@ impl Field {
             for x in 0..x_size {
                 if x == 0 || x == x_size - 1 || y == 0 || y == y_size - 1 {
                     // 0<x<x_size,0<y<y_sizeのxyのどちらかが偶数座標の外壁はstart_point。
-                    if !(x == 0 && y == 0)
-                        && !(x == x_size - 1 && y == y_size - 1)
+                    if !(x == 0 && y == 0 || x == x_size - 1 && y == y_size - 1)
                         && (x % 2 == 0 || y % 2 == 0)
                     {
                         // 偶数座標の外壁はstart_point
@@ -288,21 +244,15 @@ impl Field {
         })))
     }
 
-    ///生成起点を拡張中に変更する。
+    /// 指定した外壁開始点をExtending状態に変更します。
     ///
-    /// # Arguments
-    ///
-    /// * `start_point` - 拡張中にする生成起点の座標
+    /// # 引数
+    /// * `start_point` - 拡張中にする外壁開始点
     /// * `identifier` - 壁の識別子
     ///
-    /// # Returns
-    ///
-    /// 成功した場合はOk(())、変換に失敗した場合はエラー
-    ///
-    /// # Errors
-    ///
-    /// * 生成起点が見つからない場合
-    /// * 状態変換に失敗した場合（NotChecked状態でない場合など）
+    /// # 戻り値
+    /// * `Ok(())` - 成功
+    /// * `Err(_)` - 状態変換失敗等
     pub(in crate::maze) fn mark_start_point_as_extending(
         &mut self,
         start_point: &MazePoint,
@@ -345,24 +295,16 @@ impl Field {
         }
     }
 
-    /// 指定された柱をExtending状態に変更できるかチェックし、可能であれば変更する
+    /// 指定した柱をExtending状態に変更します（可能な場合のみ）。
     ///
-    /// `MazePointStatus::is_not_checked_wall()` と
-    /// `MazePointStatus::new_extending_pillar_from_notchecked_pillar()` を
-    /// 使用して型安全で一貫性のある状態変換を行います。
-    ///
-    /// # Arguments
-    ///
-    /// * `point` - 対象の柱の座標
+    /// # 引数
+    /// * `point` - 柱座標
     /// * `identifier` - 壁の識別子
     ///
-    /// # Returns
-    ///
-    /// 成功した場合はOk(true)、状態が変更されていた場合はOk(false)、エラーの場合はErr
-    ///
-    /// # Errors
-    ///
-    /// * 状態変換に失敗した場合
+    /// # 戻り値
+    /// * `Ok(true)` - 状態変更成功
+    /// * `Ok(false)` - 既に拡張済み等で変更なし
+    /// * `Err(_)` - 状態変換失敗
     fn mark_pillar_as_extending(
         &mut self,
         point: &MazePoint,
@@ -390,24 +332,15 @@ impl Field {
         Ok(false)
     }
 
-    /// 中間点を壁に変更する
+    /// 指定した中間点をWall状態に変更します（Path状態のみ）。
     ///
-    /// 柱もしくは生成起点の外壁と柱の間の中間点をWall状態に変更します。
-    /// 中間点は事前にPath状態である必要があります。
-    ///
-    /// # Arguments
-    ///
-    /// * `middle_point` - 壁にする中間点の座標
+    /// # 引数
+    /// * `point` - 中間点座標
     /// * `identifier` - 壁の識別子
     ///
-    /// # Returns
-    ///
-    /// 成功した場合はOk(())、中間点がPathでない場合はエラー
-    ///
-    /// # Errors
-    ///
-    /// * 中間点が見つからない場合
-    /// * 中間点がPath状態でない場合
+    /// # 戻り値
+    /// * `Ok(())` - 成功
+    /// * `Err(_)` - Pathでない等
     fn path_to_wall(
         &mut self,
         point: &MazePoint,
@@ -433,27 +366,16 @@ impl Field {
         }
     }
 
-    /// 柱もしくは生成起点の外壁から隣接する柱への拡張処理を実行する（原子的操作）
+    /// 柱または外壁開始点から隣接柱への拡張処理を実行します（原子的操作）。
     ///
-    /// 新しいMazePointStatusの判定メソッド `is_outside_wall()`, `is_not_checked_wall()`,
-    /// `is_extending_wall()`, `is_my_wall()` を使用して状態判定を簡潔かつ安全に行います。
-    ///
-    /// # Arguments
-    ///
-    /// * `from_pillar` - 拡張元の柱もしくは生成起点の外壁
+    /// # 引数
+    /// * `from_point` - 拡張元の柱または外壁開始点
     /// * `to_pillar` - 拡張先の柱
     /// * `identifier` - 壁の識別子
     ///
-    /// # Returns
-    ///
-    /// 成功した場合は拡張結果、失敗した場合はエラー
-    ///
-    /// # Errors
-    ///
-    /// * 中間点の壁化に失敗した場合
-    /// * 拡張先の柱が見つからない場合
-    /// * 予期しない柱の状態の場合
-    /// * 中間点が正確に1つでない場合
+    /// # 戻り値
+    /// * `Ok(ExtendResult)` - 拡張結果
+    /// * `Err(_)` - 状態不正・中間点不正等
     pub(in crate::maze) fn execute_pillar_extension(
         &mut self,
         from_point: &MazePoint,
