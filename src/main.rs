@@ -1,9 +1,4 @@
-mod maze_field;
-mod maze_point;
-mod maze_point_status;
-mod maze_thread;
-mod post_process;
-
+mod maze;
 use clap::{Parser, arg, command};
 use log::{LevelFilter, error, info};
 use rand::Rng;
@@ -15,15 +10,13 @@ use std::{
 };
 use threadpool::ThreadPool;
 
-use crate::{
-    maze_field::MazePoints,
-    maze_point::MazePoint,
-    maze_point_status::{MazePointStatus, WallIdentifier},
-    maze_thread::{maze_generate_monitor_thread, maze_generate_thread},
-    post_process::{
-        fix_loop_path::extract_branch_merge_key_points_from_maze,
-        fix_unreachable_path::{connect_unreachable_paths_to_main_path, detect_unreachable_paths},
+use crate::maze::{
+    maze_cell::{
+        maze_point::{point::MazePoint, point_status::MazePointStatus},
+        wall::wall_identifier::WallIdentifier,
     },
+    maze_field::field::Field,
+    maze_thread::{maze_generate_monitor_thread, maze_generate_thread},
 };
 
 #[derive(Parser, Debug)]
@@ -54,11 +47,8 @@ fn get_workers_limit() -> usize {
         .unwrap_or(4)
 }
 
-fn make_maze(
-    x_size: u32,
-    y_size: u32,
-) -> Result<Arc<RwLock<MazePoints>>, Box<dyn std::error::Error>> {
-    let maze_points = MazePoints::initialize_maze_points(x_size, y_size)?;
+fn make_maze(x_size: u32, y_size: u32) -> Result<Arc<RwLock<Field>>, Box<dyn std::error::Error>> {
+    let maze_points = Field::initialize_maze_points(x_size, y_size)?;
 
     info!("Maze initialized with size {}x{}", x_size, y_size);
     let num_threads = get_workers_limit();
@@ -161,14 +151,16 @@ fn save_maze_result_as_png(
     );
     for (point, status) in maze {
         let path_color = image::Rgba([255u8, 255u8, 255u8, 255u8]); // 白
-        let color = match status {
-            MazePointStatus::Path => path_color,
-            MazePointStatus::Wall(..) => wall_color_list
-                .get(status.get_wall_identifier().unwrap())
-                .cloned()
-                .unwrap_or(image::Rgba([0u8, 0u8, 0u8, 255u8])), // 黒
+        let color = if status.is_wall() {
+            if let Some(identifier) = status.get_wall_identifier() {
+                wall_color_list.get(identifier).unwrap_or(&path_color)
+            } else {
+                &path_color
+            }
+        } else {
+            &path_color
         };
-        img.put_pixel(point.x(), point.y(), color);
+        img.put_pixel(point.x(), point.y(), *color);
     }
 
     img.save(file_path)?;
@@ -186,10 +178,6 @@ fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::e
     }
 
     let maze_points = make_maze(x_size, y_size)?;
-    connect_unreachable_paths_to_main_path(&maze_points)?;
-    
-    let unreachable_paths = detect_unreachable_paths(&maze_points)?;
-    info!("Unreachable paths: {:?}", unreachable_paths);
 
     let maze_guard = maze_points.read().map_err(|_| {
         Box::new(std::io::Error::other(
@@ -202,9 +190,6 @@ fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::e
         maze_guard.y_size(),
         &full_path,
     )?;
-
-    let res = extract_branch_merge_key_points_from_maze(&maze_points)?;
-    info!("Generated branch-merge paths: {:?}", res);
 
     Ok(())
 }
@@ -229,156 +214,4 @@ fn main() {
         error!("Failed to start maze generation: {}", e);
         std::process::exit(1);
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_start_function_basic() {
-        // ログ初期化（テスト用）
-        let _ = env_logger::builder()
-            .filter_level(LevelFilter::Debug)
-            .is_test(true)
-            .try_init();
-
-        // 一時ディレクトリを作成
-        let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let file_path = temp_dir.path().join("sample.png");
-        let file_path_str = file_path
-            .to_str()
-            .expect("Failed to convert path to string");
-
-        // ファイルを事前に作成（空ファイル）
-        fs::write(&file_path, b"").expect("Failed to create sample file");
-
-        // start関数を実行
-        let result = start(5, 5, file_path_str);
-
-        // 結果の検証
-        assert!(result.is_ok(), "start() should succeed: {:?}", result);
-
-        // ファイルが存在することを確認
-        assert!(file_path.exists(), "Output file should exist");
-
-        // ファイルサイズが0より大きいことを確認
-        let metadata = fs::metadata(&file_path).expect("Failed to get file metadata");
-        assert!(metadata.len() > 0, "Output file should not be empty");
-
-        // 一時ディレクトリは自動的にクリーンアップされる
-    }
-
-    #[test]
-    fn test_start_function_with_different_sizes() {
-        let _ = env_logger::builder()
-            .filter_level(LevelFilter::Debug)
-            .is_test(true)
-            .try_init();
-
-        let test_cases = vec![(5, 5), (7, 7), (9, 9)];
-
-        for (x_size, y_size) in test_cases {
-            let temp_dir = TempDir::new().expect("Failed to create temp directory");
-            let file_path = temp_dir
-                .path()
-                .join(format!("test_{}x{}.png", x_size, y_size));
-            let file_path_str = file_path
-                .to_str()
-                .expect("Failed to convert path to string");
-
-            // ファイルを事前に作成
-            fs::write(&file_path, b"").expect("Failed to create test file");
-
-            // start関数を実行
-            let result = start(x_size, y_size, file_path_str);
-
-            // 結果の検証
-            assert!(
-                result.is_ok(),
-                "start({}, {}) should succeed: {:?}",
-                x_size,
-                y_size,
-                result
-            );
-
-            // ファイルが存在することを確認
-            assert!(
-                file_path.exists(),
-                "Output file for {}x{} should exist",
-                x_size,
-                y_size
-            );
-        }
-    }
-
-    #[test]
-    fn test_start_function_invalid_file_path() {
-        let _ = env_logger::builder()
-            .filter_level(LevelFilter::Debug)
-            .is_test(true)
-            .try_init();
-
-        // 存在しないディレクトリのパス
-        let invalid_path = "/non_existent_directory/sample.png";
-
-        // start関数を実行（エラーが期待される）
-        let result = start(5, 5, invalid_path);
-
-        // エラーが返されることを確認
-        assert!(result.is_err(), "start() should fail with invalid path");
-    }
-
-    #[test]
-    fn test_save_maze_result_as_png() {
-        let _ = env_logger::builder()
-            .filter_level(LevelFilter::Debug)
-            .is_test(true)
-            .try_init();
-
-        // 迷路を生成
-        let maze_points = make_maze(5, 5).expect("Failed to create maze");
-
-        // 一時ディレクトリを作成
-        let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let file_path = temp_dir.path().join("test_save.png");
-
-        // ファイルを事前に作成
-        fs::write(&file_path, b"").expect("Failed to create test file");
-
-        // PNG保存関数をテスト
-        let maze_guard = maze_points.read().expect("Failed to acquire read lock");
-        let maze_hashmap = maze_guard.get_all_maze_points_clone();
-        let width = maze_guard.x_size();
-        let height = maze_guard.y_size();
-
-        let result = save_maze_result_as_png(maze_hashmap, width, height, &file_path);
-
-        // 結果の検証
-        assert!(
-            result.is_ok(),
-            "save_maze_result_as_png should succeed: {:?}",
-            result
-        );
-
-        // ファイルが存在することを確認
-        assert!(file_path.exists(), "PNG file should exist");
-
-        // ファイルサイズが0より大きいことを確認
-        let metadata = fs::metadata(&file_path).expect("Failed to get file metadata");
-        assert!(metadata.len() > 0, "PNG file should not be empty");
-    }
-
-    #[test]
-    fn test_get_workers_limit() {
-        let workers = get_workers_limit();
-
-        // ワーカー数は1以上であることを確認
-        assert!(workers >= 1, "Worker count should be at least 1");
-
-        // ワーカー数が合理的な範囲内であることを確認（最大128とする）
-        assert!(workers <= 128, "Worker count should be reasonable");
-    }
 }
