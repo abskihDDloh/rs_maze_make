@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use log::warn;
+use log::{debug, warn};
 use rand::Rng;
 
 use crate::maze::{
@@ -187,7 +187,7 @@ use crate::maze::{
 /// - [`extend_pillar_to_adjacent_pillar()`] - 後続の拡張処理
 /// - [`WallIdentifier`] - 壁の識別子管理
 /// - [`OutsideWallType::StartPoint`] - 外壁開始点の定義
-pub fn select_start_point_outside_wall(
+pub(in crate::maze) fn select_start_point_outside_wall(
     maze_points: &Arc<RwLock<Field>>,
     identifier: WallIdentifier,
 ) -> Result<MazePoint, Box<dyn std::error::Error + Send + Sync>> {
@@ -200,7 +200,7 @@ pub fn select_start_point_outside_wall(
                 identifier
             ))) as Box<dyn std::error::Error + Send + Sync>
         })?;
-        if maze_points_read.all_start_point_seeked_flag() {
+        if maze_points_read.all_pillar_seeked_flag() {
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
@@ -228,7 +228,7 @@ pub fn select_start_point_outside_wall(
             ))) as Box<dyn std::error::Error + Send + Sync>
         })?;
 
-        if maze_points_write.all_start_point_seeked_flag() {
+        if maze_points_write.all_pillar_seeked_flag() {
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
@@ -321,7 +321,7 @@ pub fn select_start_point_outside_wall(
 ///     }
 /// }
 /// ```
-pub fn extend_pillar_to_adjacent_pillar(
+pub(in crate::maze) fn extend_point_to_adjacent_pillar(
     maze_points: &Arc<RwLock<Field>>,
     source_point: MazePoint,
     identifier: WallIdentifier,
@@ -332,13 +332,18 @@ pub fn extend_pillar_to_adjacent_pillar(
         source_point
     );
     loop {
+        debug!(
+            "Attempting to extend point:  with identifier {}",
+            error_msg_common_part
+        );
+
         let maze_points_read = maze_points.read().map_err(|_| {
             Box::new(std::io::Error::other(format!(
                 "Failed to acquire read lock. {:?}",
                 identifier
             ))) as Box<dyn std::error::Error + Send + Sync>
         })?;
-        if maze_points_read.all_start_point_seeked_flag() {
+        if maze_points_read.all_pillar_seeked_flag() {
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
@@ -352,7 +357,11 @@ pub fn extend_pillar_to_adjacent_pillar(
         drop(maze_points_read);
 
         if adjacent_pillars_candidate.is_empty() {
-            continue; // 利用可能な隣接柱がない場合は再試行
+            debug!(
+                "adjacent pillars not found. return. {}",
+                error_msg_common_part
+            );
+            return Ok(ExtendResult::new_extending_pillar()); // 利用可能な隣接柱がない場合は拡張不能。
         }
 
         // 隣接柱候補からランダムに1つ選択
@@ -365,7 +374,7 @@ pub fn extend_pillar_to_adjacent_pillar(
                 error_msg_common_part
             ))) as Box<dyn std::error::Error + Send + Sync>
         })?;
-        if maze_points_write.all_start_point_seeked_flag() {
+        if maze_points_write.all_pillar_seeked_flag() {
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
@@ -388,7 +397,9 @@ pub fn extend_pillar_to_adjacent_pillar(
             }
             _ => {
                 drop(maze_points_write); // 書き込みロックを解放
-                return Ok(result.unwrap());
+                let r = result.unwrap();
+                debug!("extend_status: {:?} {}", r, error_msg_common_part);
+                return Ok(r);
             }
         }
     }

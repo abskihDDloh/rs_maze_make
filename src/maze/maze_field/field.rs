@@ -164,14 +164,13 @@ impl Field {
         adjacent_pillars
     }
 
-    /// すべての柱と開始点が探索された場合はtrueを返す
+    /// すべての柱が探索された場合はtrueを返す
     ///
     /// # Returns
     ///
-    /// すべての柱と開始点が探索済みの場合はtrue、そうでなければfalse
-    pub fn all_start_point_seeked_flag(&self) -> bool {
-        (self.pillar_points.len() == self.extending_pillar_points.len())
-            && (self.extend_start_points.len() == self.extending_start_points.len())
+    /// すべての柱が探索済みの場合はtrue、そうでなければfalse
+    pub fn all_pillar_seeked_flag(&self) -> bool {
+        self.pillar_points.len() == self.extending_pillar_points.len()
     }
 
     /// 迷路データを初期化し、スレッドセーフなラッパーで返す
@@ -546,14 +545,14 @@ impl Field {
         // 拡張先の状態を確認して適切に処理
         if let Some(status) = self.all_maze_points.get(to_pillar).cloned() {
             if status.is_outside_wall() {
-                Ok(ExtendResult::Outside)
+                Ok(ExtendResult::new_outside())
             } else if status.is_not_checked_pillar() {
                 // 拡張先がNotChecked状態の柱であれば、拡張処理を行う
                 self.mark_pillar_as_extending(to_pillar, identifier)?;
-                Ok(ExtendResult::NextPillar(*to_pillar))
+                Ok(ExtendResult::new_next_pillar(*to_pillar))
             } else if status.is_extending_pillar() {
                 // 既に拡張中の柱であれば、何もしない
-                Ok(ExtendResult::ExtendingPillar)
+                Ok(ExtendResult::new_extending_pillar())
             } else {
                 Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
