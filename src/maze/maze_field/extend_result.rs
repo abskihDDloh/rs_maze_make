@@ -51,11 +51,13 @@ impl ExtendResult {
     }
 
     /// 拡張状態を取得する
+    #[allow(dead_code)]
     pub fn is_extending(&self) -> bool {
         matches!(self, ExtendResult::ExtendingPillar(_))
     }
 
     /// 境界に到達したかどうかを取得する
+    #[allow(dead_code)]
     pub fn is_outside(&self) -> bool {
         matches!(self, ExtendResult::Outside(_))
     }

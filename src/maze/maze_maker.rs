@@ -1,7 +1,6 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, RwLock},
-};
+use std::
+    sync::{Arc, RwLock}
+;
 
 use log::{debug, warn};
 use rand::Rng;

@@ -115,9 +115,9 @@ use std::{
 ///
 /// # 関連項目
 ///
-/// - [`MazePointStatus`]: 識別子を使用する迷路ポイント状態
-/// - [`WallType`]: 識別子で管理される壁の種類
-/// - [`Field`]: 識別子で壁を管理する迷路フィールド
+/// - `MazePointStatus`: 識別子を使用する迷路ポイント状態
+/// - `WallType`: 識別子で管理される壁の種類
+/// - `Field`: 識別子で壁を管理する迷路フィールド
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct WallIdentifier {
     /// スレッドID（生成元スレッドの識別）
@@ -126,6 +126,7 @@ pub struct WallIdentifier {
     unix_time_nanos: i64,
 }
 
+#[allow(dead_code)]
 impl WallIdentifier {
     /// 新しい壁識別子を生成します
     ///
@@ -552,7 +553,7 @@ mod tests {
 
         let min_diff = *time_diffs.iter().min().unwrap();
         let max_diff = *time_diffs.iter().max().unwrap();
-        let median_diff = time_diffs[time_diffs.len() / 2];
+        let _median_diff = time_diffs[time_diffs.len() / 2];
         let avg_diff = time_diffs.iter().sum::<i64>() / time_diffs.len() as i64;
 
         println!(
@@ -618,7 +619,7 @@ mod tests {
         assert_eq!(original, copied);
 
         // Clone trait のテスト
-        let cloned = original.clone();
+        let cloned = original;
         assert_eq!(original, cloned);
 
         // Default trait のテスト
@@ -710,7 +711,7 @@ mod tests {
 
         // スレッドID分布の確認
         let mut thread_id_usage = HashMap::new();
-        for (thread_num, id) in final_results.iter() {
+        for (_thread_num, id) in final_results.iter() {
             *thread_id_usage.entry(id.thread_id()).or_insert(0) += 1;
         }
 
@@ -991,7 +992,7 @@ mod tests {
         assert!(id1.same_thread(&id1));
 
         // マルチスレッドでの異なるスレッドID確認
-        let other_thread_id = thread::spawn(|| WallIdentifier::new()).join().unwrap();
+        let other_thread_id = thread::spawn(WallIdentifier::new).join().unwrap();
 
         // 通常は異なるスレッドIDになるが、環境によっては同じ場合もある
         if !id1.same_thread(&other_thread_id) {
