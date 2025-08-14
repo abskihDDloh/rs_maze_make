@@ -180,7 +180,7 @@ impl Field {
         for y in 0..y_size {
             for x in 0..x_size {
                 let point = MazePoint::new(x, y);
-                all_maze_points.insert(point, MazePointStatus::new_path());
+                all_maze_points.insert(point, MazePointStatus::new_not_resolved_path());
             }
         }
 
@@ -348,7 +348,7 @@ impl Field {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if let Some(status) = self.all_maze_points.get(point) {
             match status {
-                MazePointStatus::Path(_) => {
+                MazePointStatus::Path(..) => {
                     self.all_maze_points
                         .insert(*point, MazePointStatus::new_maze_wall(*identifier));
                     Ok(())

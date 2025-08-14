@@ -34,6 +34,17 @@ impl NewMethodEnforcer {
         NewMethodEnforcer {}
     }
 }
+/// 通路の種類を表す列挙型
+///
+/// - `RESOLVED_PATH`: 経路探索などで「解決済み」となった通路
+/// - `NOT_RESOLVED_PATH`: まだ経路探索されていない通常の通路
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PATH_TYPE {
+    /// 経路探索で到達済みの通路
+    RESOLVED_PATH,
+    /// 未到達・未探索の通路
+    NOT_RESOLVED_PATH,
+}
 
 /// 迷路の各座標点の状態を表す列挙型
 ///
@@ -169,7 +180,11 @@ pub enum MazePointStatus {
     /// - **ゴール探索**: 経路探索アルゴリズムでの有効ノード
     /// - **空間計算**: 迷路内の利用可能空間の計測
     /// - **描画処理**: 視覚的表現での背景色や空白表示
-    Path(NewMethodEnforcer),
+    /// 通路（Path）
+    ///
+    /// - `PATH_TYPE`: 通路の状態（解決済み/未解決）
+    /// - `NewMethodEnforcer`: 型安全性強制用
+    Path(PATH_TYPE, NewMethodEnforcer),
 
     /// 壁（移動不可能な障害物）
     ///
@@ -248,8 +263,35 @@ impl MazePointStatus {
     /// # 戻り値
     ///
     /// 通路状態の `MazePointStatus`
-    pub fn new_path() -> Self {
-        MazePointStatus::Path(NewMethodEnforcer::new())
+    /// 未解決通路（NOT_RESOLVED_PATH）を生成
+    pub fn new_not_resolved_path() -> Self {
+        MazePointStatus::Path(PATH_TYPE::NOT_RESOLVED_PATH, NewMethodEnforcer::new())
+    }
+
+    /// この座標点が通路かどうかを判定します
+    ///
+    /// 座標点の基本分類を判定する最も基本的な述語です。
+    /// `is_wall()` の論理反転に相当します。
+    ///
+    /// # 判定条件
+    ///
+    /// `Path(_)` パターンにマッチする場合に `true`
+    ///
+    /// # 戻り値
+    ///
+    /// 通路の場合は `true`、壁（任意の種類・状態）の場合は `false`
+    pub fn is_path(&self) -> bool {
+        matches!(self, MazePointStatus::Path(..))
+    }
+
+    /// 解決済み通路（RESOLVED_PATH）を生成
+    pub fn new_resolved_path() -> Self {
+        MazePointStatus::Path(PATH_TYPE::RESOLVED_PATH, NewMethodEnforcer::new())
+    }
+
+    /// この座標点が「解決済み通路」か判定
+    pub fn is_resolved_path(&self) -> bool {
+        matches!(self, MazePointStatus::Path(PATH_TYPE::RESOLVED_PATH, _))
     }
 
     /// 迷路壁を生成します
@@ -493,22 +535,6 @@ impl MazePointStatus {
     /// 壁（任意の種類・状態）の場合は `true`、通路の場合は `false`
     pub fn is_wall(&self) -> bool {
         matches!(self, MazePointStatus::Wall(..))
-    }
-
-    /// この座標点が通路かどうかを判定します
-    ///
-    /// 座標点の基本分類を判定する最も基本的な述語です。
-    /// `is_wall()` の論理反転に相当します。
-    ///
-    /// # 判定条件
-    ///
-    /// `Path(_)` パターンにマッチする場合に `true`
-    ///
-    /// # 戻り値
-    ///
-    /// 通路の場合は `true`、壁（任意の種類・状態）の場合は `false`
-    pub fn is_path(&self) -> bool {
-        matches!(self, MazePointStatus::Path(..))
     }
 
     /// 壁の識別子を取得します
@@ -872,15 +898,27 @@ mod tests {
 
     // Basic Constructor Tests
     #[test]
-    fn test_new_path() {
-        let path = MazePointStatus::new_path();
-
+    fn test_new_not_resolved_path() {
+        let path = MazePointStatus::new_not_resolved_path();
         assert!(path.is_path());
         assert!(!path.is_wall());
         assert!(!path.is_outside_wall());
         assert!(!path.is_pillar());
         assert_eq!(path.get_wall_identifier(), None);
         assert_eq!(path.get_wall_type(), None);
+        assert!(!path.is_resolved_path());
+    }
+
+    #[test]
+    fn test_new_resolved_path() {
+        let path = MazePointStatus::new_resolved_path();
+        assert!(path.is_path());
+        assert!(!path.is_wall());
+        assert!(!path.is_outside_wall());
+        assert!(!path.is_pillar());
+        assert_eq!(path.get_wall_identifier(), None);
+        assert_eq!(path.get_wall_type(), None);
+        assert!(path.is_resolved_path());
     }
 
     #[test]
@@ -998,7 +1036,7 @@ mod tests {
         let identifier = WallIdentifier::new();
 
         // Try to convert path to extending start point (should fail)
-        let path = MazePointStatus::new_path();
+        let path = MazePointStatus::new_not_resolved_path();
         let result = MazePointStatus::new_extending_start_point_from_notchecked_start_point(
             path,
             &identifier,
@@ -1027,7 +1065,7 @@ mod tests {
         let identifier = WallIdentifier::new();
 
         // Try to convert path to extending pillar (should fail)
-        let path = MazePointStatus::new_path();
+        let path = MazePointStatus::new_not_resolved_path();
         let result =
             MazePointStatus::new_extending_pillar_from_notchecked_pillar(path, &identifier);
         assert!(result.is_err());
@@ -1054,7 +1092,7 @@ mod tests {
     fn test_error_messages() {
         let identifier = WallIdentifier::new();
 
-        let path = MazePointStatus::new_path();
+        let path = MazePointStatus::new_not_resolved_path();
         let result =
             MazePointStatus::new_extending_pillar_from_notchecked_pillar(path, &identifier);
         assert!(result.is_err());
@@ -1076,7 +1114,7 @@ mod tests {
     // Comprehensive Boolean Method Tests
     #[test]
     fn test_all_boolean_methods_path() {
-        let path = MazePointStatus::new_path();
+        let path = MazePointStatus::new_not_resolved_path();
 
         // Path assertions
         assert!(path.is_path());
@@ -1288,7 +1326,7 @@ mod tests {
         assert!(extending_pillar.is_my_wall(&identifier2));
 
         // Test path (no identifier)
-        let path = MazePointStatus::new_path();
+        let path = MazePointStatus::new_not_resolved_path();
         assert_eq!(path.get_wall_identifier(), None);
         assert!(!path.is_my_wall(&identifier1));
         assert!(!path.is_my_wall(&identifier2));
@@ -1300,7 +1338,7 @@ mod tests {
         let identifier = WallIdentifier::new();
 
         // Path should return None
-        let path = MazePointStatus::new_path();
+        let path = MazePointStatus::new_not_resolved_path();
         assert!(path.get_wall_type().is_none());
 
         // Each wall type should return Some
@@ -1332,7 +1370,7 @@ mod tests {
         let identifier = WallIdentifier::new();
 
         // Test path cloning
-        let path1 = MazePointStatus::new_path();
+        let path1 = MazePointStatus::new_not_resolved_path();
         let path2 = path1.clone();
         assert_eq!(path1, path2);
 
@@ -1358,8 +1396,8 @@ mod tests {
         let mut status_map = HashMap::new();
 
         // Test that equal statuses have same hash
-        let path1 = MazePointStatus::new_path();
-        let path2 = MazePointStatus::new_path();
+        let path1 = MazePointStatus::new_not_resolved_path();
+        let path2 = MazePointStatus::new_not_resolved_path();
         status_map.insert(path1, "path");
         assert_eq!(status_map.get(&path2), Some(&"path"));
 
@@ -1379,7 +1417,7 @@ mod tests {
     fn test_debug_output() {
         let identifier = WallIdentifier::new();
 
-        let path = MazePointStatus::new_path();
+        let path = MazePointStatus::new_not_resolved_path();
         let debug_str = format!("{:?}", path);
         assert!(debug_str.contains("Path"));
         assert!(debug_str.contains("NewMethodEnforcer"));
@@ -1401,8 +1439,8 @@ mod tests {
         let identifier = WallIdentifier::new();
 
         // Same variant types should have same size
-        let path1 = MazePointStatus::new_path();
-        let path2 = MazePointStatus::new_path();
+        let path1 = MazePointStatus::new_not_resolved_path();
+        let path2 = MazePointStatus::new_not_resolved_path();
         assert_eq!(std::mem::size_of_val(&path1), std::mem::size_of_val(&path2));
 
         let pillar1 = MazePointStatus::new_notchecked_pillar();
@@ -1443,7 +1481,7 @@ mod tests {
 
         // Test all possible state combinations
         let test_cases = vec![
-            (MazePointStatus::new_path(), "path"),
+            (MazePointStatus::new_not_resolved_path(), "path"),
             (MazePointStatus::new_maze_wall(identifier), "maze_wall"),
             (
                 MazePointStatus::new_start_point_outside_wall(identifier),
@@ -1520,7 +1558,7 @@ mod tests {
         let start = Instant::now();
         let _statuses: Vec<MazePointStatus> = (0..1000)
             .map(|i| match i % 5 {
-                0 => MazePointStatus::new_path(),
+                0 => MazePointStatus::new_not_resolved_path(),
                 1 => MazePointStatus::new_maze_wall(identifier),
                 2 => MazePointStatus::new_notchecked_pillar(),
                 3 => MazePointStatus::new_start_point_outside_wall(identifier),
@@ -1553,12 +1591,13 @@ mod tests {
         let identifier = WallIdentifier::new();
 
         // Recommended constructor usage
-        let _path = MazePointStatus::new_path();
+        let _path = MazePointStatus::new_not_resolved_path();
         let _maze_wall = MazePointStatus::new_maze_wall(identifier);
         let _pillar = MazePointStatus::new_notchecked_pillar();
 
         // Direct construction (possible but discouraged)
-        let _direct_path = MazePointStatus::Path(NewMethodEnforcer::new());
+        let _direct_path =
+            MazePointStatus::Path(PATH_TYPE::NOT_RESOLVED_PATH, NewMethodEnforcer::new());
         let _direct_wall = MazePointStatus::Wall(
             WallType::new_not_checked_pillar(),
             None,

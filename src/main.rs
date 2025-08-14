@@ -1,4 +1,5 @@
 mod maze;
+mod solve_maze;
 use clap::{Parser, arg, command};
 use log::{LevelFilter, debug, error, info};
 use rand::Rng;
@@ -10,13 +11,16 @@ use std::{
 };
 use threadpool::ThreadPool;
 
-use crate::maze::{
-    maze_cell::{
-        maze_point::{point::MazePoint, point_status::MazePointStatus},
-        wall::wall_identifier::WallIdentifier,
+use crate::{
+    maze::{
+        maze_cell::{
+            maze_point::{point::MazePoint, point_status::MazePointStatus},
+            wall::wall_identifier::WallIdentifier,
+        },
+        maze_field::field::Field,
+        maze_thread::{maze_generate_monitor_thread, maze_generate_thread},
     },
-    maze_field::field::Field,
-    maze_thread::{maze_generate_monitor_thread, maze_generate_thread},
+    solve_maze::solve::resolve_path_from_start_to_goal,
 };
 
 #[derive(Parser, Debug)]
@@ -43,6 +47,12 @@ struct Args {
         help = "保存先のファイルのパスを指定します。指定がない場合はユーザのホームディレクトリに実行日時で保存されます。"
     )]
     file_path: String,
+    #[arg(
+        short = 's',
+        long = "solve",
+        help = "迷路を解くためのオプションです。設定すると出力に解答が含まれます。(スタート=(1,1), ゴール=(x_size-2,y_size-2)とする。)"
+    )]
+    solve: bool,
     #[arg(short = 'd', long = "debug", help = "デバッグモードを有効にします。")]
     debug: bool,
 }
@@ -116,6 +126,7 @@ fn save_maze_result_as_png(
     width: u32,
     height: u32,
     file_path: &PathBuf,
+    solve_flag: bool,
     debug_flag: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let maze_i = maze_points.clone();
@@ -159,18 +170,27 @@ fn save_maze_result_as_png(
         wall_identifiers.len(),
         wall_color_list.len()
     );
+    let path_color = image::Rgba([255u8, 255u8, 255u8, 255u8]); // 白
+    let solved_path_color = image::Rgba([1u8, 255u8, 1u8, 128u8]); // 緑
+    let black_color = image::Rgba([0u8, 0u8, 0u8, 255u8]); // 黒
     for (point, status) in maze {
-        let path_color = image::Rgba([255u8, 255u8, 255u8, 255u8]); // 白
-        let black_color = image::Rgba([0u8, 0u8, 0u8, 255u8]); // 黒
         let color = if status.is_wall() {
             if let Some(identifier) = status.get_wall_identifier() {
                 wall_color_list.get(identifier).unwrap_or(&black_color)
             } else {
                 &black_color
             }
-        } else {
+        } else if solve_flag && status.is_resolved_path() {
+            &solved_path_color
+        } else if status.is_path() {
             &path_color
+        } else {
+            &black_color
         };
+        debug!(
+            "Point: {:?}, Color: {:?}, Status: {:?}",
+            point, color, status
+        );
         img.put_pixel(point.x(), point.y(), *color);
     }
 
@@ -183,6 +203,7 @@ fn start(
     x_size: u32,
     y_size: u32,
     file_path: &str,
+    solve_flag: bool,
     debug_flag: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if file_path.is_empty() {
@@ -190,7 +211,13 @@ fn start(
         let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
         let default_file_name = format!("{}.png", chrono::Local::now().format("%Y%m%d%H%M%S"));
         let full_path = home_dir.join(default_file_name);
-        return start(x_size, y_size, full_path.to_str().unwrap(), debug_flag);
+        return start(
+            x_size,
+            y_size,
+            full_path.to_str().unwrap(),
+            solve_flag,
+            debug_flag,
+        );
     }
 
     // canonicalizeではなく、PathBufを直接使用
@@ -225,11 +252,21 @@ fn start(
             "Failed to acquire read lock for maze points",
         )) as Box<dyn std::error::Error>
     })?;
+
+    let mut maze_points = maze_guard.get_all_maze_points_clone();
+
+    if solve_flag {
+        // 迷路を解く処理
+        let solve_list = resolve_path_from_start_to_goal(&mut maze_points)?;
+        info!("Solved path: {:?}", solve_list);
+    }
+
     save_maze_result_as_png(
-        maze_guard.get_all_maze_points_clone(),
+        maze_points,
         maze_guard.x_size(),
         maze_guard.y_size(),
         &full_path,
+        solve_flag,
         debug_flag,
     )?;
 
@@ -238,7 +275,7 @@ fn start(
 
 fn main() {
     let args = Args::parse();
-
+    let solve_flag = args.solve;
     let debug_flag = args.debug;
     let log_level = if debug_flag {
         LevelFilter::Debug
@@ -252,7 +289,14 @@ fn main() {
 
     info!("Application started with args: {:?}", args);
     let default_file_name = args.file_path.clone();
-    start(args.x_size, args.y_size, &default_file_name, debug_flag).unwrap_or_else(|e| {
+    start(
+        args.x_size,
+        args.y_size,
+        &default_file_name,
+        solve_flag,
+        debug_flag,
+    )
+    .unwrap_or_else(|e| {
         error!("Failed to start maze generation: {}", e);
         std::process::exit(1);
     });
