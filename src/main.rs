@@ -53,6 +53,12 @@ struct Args {
         help = "迷路を解くためのオプションです。設定すると出力に解答が含まれます。(スタート=(1,1), ゴール=(x_size-2,y_size-2)とする。)"
     )]
     solve: bool,
+    #[arg(
+        short = 'c',
+        long = "color",
+        help = "迷路生成スレッドごとに壁の色を変更します。"
+    )]
+    color: bool,
     #[arg(short = 'd', long = "debug", help = "デバッグモードを有効にします。")]
     debug: bool,
 }
@@ -127,7 +133,7 @@ fn save_maze_result_as_png(
     height: u32,
     file_path: &PathBuf,
     solve_flag: bool,
-    debug_flag: bool,
+    color_flag: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let maze_i = maze_points.clone();
     let mut wall_identifiers: HashSet<WallIdentifier> = HashSet::new();
@@ -143,8 +149,8 @@ fn save_maze_result_as_png(
     let mut previous_color_list: HashSet<image::Rgba<u8>> = HashSet::new();
     let mut wall_color_list: HashMap<WallIdentifier, image::Rgba<u8>> = HashMap::new();
 
-    if debug_flag {
-        // デバッグモードのときは識別子ごとに壁の色を変える。(RGB2-254の範囲でランダムな色を使用)
+    if color_flag {
+        // フラグがONのときは識別子ごとに壁の色を変える。(RGB2-254の範囲でランダムな色を使用)
         // wall_identifiersの件数だけループ
         for wall_identifier in &wall_identifiers {
             loop {
@@ -162,14 +168,14 @@ fn save_maze_result_as_png(
                 }
             }
         }
+        info!(
+            "{} {} {}",
+            previous_color_list.len(),
+            wall_identifiers.len(),
+            wall_color_list.len()
+        );
     }
 
-    debug!(
-        "{} {} {}",
-        previous_color_list.len(),
-        wall_identifiers.len(),
-        wall_color_list.len()
-    );
     let path_color = image::Rgba([255u8, 255u8, 255u8, 255u8]); // 白
     let solved_path_color = image::Rgba([1u8, 255u8, 1u8, 128u8]); // 緑
     let black_color = image::Rgba([0u8, 0u8, 0u8, 255u8]); // 黒
@@ -203,6 +209,7 @@ fn start(
     x_size: u32,
     y_size: u32,
     file_path: &str,
+    color_flag: bool,
     solve_flag: bool,
     debug_flag: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -215,6 +222,7 @@ fn start(
             x_size,
             y_size,
             full_path.to_str().unwrap(),
+            color_flag,
             solve_flag,
             debug_flag,
         );
@@ -267,7 +275,7 @@ fn start(
         maze_guard.y_size(),
         &full_path,
         solve_flag,
-        debug_flag,
+        color_flag,
     )?;
 
     Ok(())
@@ -276,6 +284,7 @@ fn start(
 fn main() {
     let args = Args::parse();
     let solve_flag = args.solve;
+    let color_flag = args.color;
     let debug_flag = args.debug;
     let log_level = if debug_flag {
         LevelFilter::Debug
@@ -293,6 +302,7 @@ fn main() {
         args.x_size,
         args.y_size,
         &default_file_name,
+        color_flag,
         solve_flag,
         debug_flag,
     )
