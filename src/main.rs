@@ -36,7 +36,13 @@ struct Args {
         help = "y方向のピクセル数を指定します。"
     )]
     y_size: u32,
-
+    #[arg(
+        short = 'f',
+        long = "file_path",
+        default_value = "",
+        help = "保存先のファイルのパスを指定します。指定がない場合はユーザのホームディレクトリに実行日時で保存されます。"
+    )]
+    file_path: String,
     #[arg(short = 'd', long = "debug", help = "デバッグモードを有効にします。")]
     debug: bool,
 }
@@ -169,6 +175,15 @@ fn save_maze_result_as_png(
 }
 
 fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    
+    if file_path.is_empty() {
+        // ファイルパスが空の場合はホームディレクトリに保存
+        let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
+        let default_file_name = format!("{}.png", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let full_path = home_dir.join(default_file_name);
+        return start(x_size, y_size, full_path.to_str().unwrap());
+    }
+
     // canonicalizeではなく、PathBufを直接使用
     let full_path = PathBuf::from(file_path);
 
@@ -176,7 +191,6 @@ fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::e
     if let Some(parent) = full_path.parent() {
         fs::create_dir_all(parent)?;
     }
-
     let maze_points = make_maze(x_size, y_size)?;
 
     let maze_guard = maze_points.read().map_err(|_| {
@@ -208,8 +222,7 @@ fn main() {
         .init();
 
     info!("Application started with args: {:?}", args);
-    let now = chrono::Local::now();
-    let default_file_name = format!("{}.png", now.format("%Y%m%d%H%M%S"));
+    let default_file_name = args.file_path.clone();
     start(args.x_size, args.y_size, &default_file_name).unwrap_or_else(|e| {
         error!("Failed to start maze generation: {}", e);
         std::process::exit(1);
