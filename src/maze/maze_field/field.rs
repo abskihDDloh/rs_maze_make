@@ -61,6 +61,7 @@ impl Field {
         self.all_maze_points.clone()
     }
 
+    #[allow(dead_code)]
     pub fn get_maze_point_status(&self, point: &MazePoint) -> Option<MazePointStatus> {
         self.all_maze_points.get(point).cloned()
     }
@@ -75,7 +76,7 @@ impl Field {
         self.extending_pillar_points.clone()
     }
 
-    /// 利用可能な柱の座標リストを返します（拡張中以外）。
+    #[allow(dead_code)]
     pub fn get_available_pillar_points(&self) -> Vec<MazePoint> {
         // pillar_pointsに含まれるが、extending_pillar_pointsに含まれない柱をフィルタリング
         self.pillar_points
@@ -92,8 +93,7 @@ impl Field {
     pub fn get_extending_start_points_clone(&self) -> HashSet<MazePoint> {
         self.extending_start_points.clone()
     }
-
-    /// 利用可能な柱からランダムに1つ選択します。
+    #[allow(dead_code)]
     pub fn get_random_available_pillar_point(&self) -> Option<MazePoint> {
         let available_points = self.get_available_pillar_points();
         if available_points.is_empty() {

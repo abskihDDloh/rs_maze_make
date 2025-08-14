@@ -1,6 +1,9 @@
-use crate::maze::maze_cell::wall::{
-    extend_status::ExtendStatus, outside_wall_type::OutsideWallType,
-    wall_identifier::WallIdentifier, wall_type::WallType,
+use crate::maze::maze_cell::{
+    path::path_type::PathType,
+    wall::{
+        extend_status::ExtendStatus, outside_wall_type::OutsideWallType,
+        wall_identifier::WallIdentifier, wall_type::WallType,
+    },
 };
 
 /// メソッド使用の強制を行うための内部構造体
@@ -33,17 +36,6 @@ impl NewMethodEnforcer {
     fn new() -> Self {
         NewMethodEnforcer {}
     }
-}
-/// 通路の種類を表す列挙型
-///
-/// - `RESOLVED_PATH`: 経路探索などで「解決済み」となった通路
-/// - `NOT_RESOLVED_PATH`: まだ経路探索されていない通常の通路
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum PATH_TYPE {
-    /// 経路探索で到達済みの通路
-    RESOLVED_PATH,
-    /// 未到達・未探索の通路
-    NOT_RESOLVED_PATH,
 }
 
 /// 迷路の各座標点の状態を表す列挙型
@@ -145,10 +137,10 @@ pub enum PATH_TYPE {
 /// # 相互運用性
 ///
 /// ## 関連型との統合
-/// - [`WallType`]: 壁の詳細分類と状態管理
-/// - [`WallIdentifier`]: 所有権とトレーサビリティ
-/// - [`ExtendStatus`]: 迷路生成過程の状態追跡
-/// - [`OutsideWallType`]: 外壁の種類別分類
+/// - `WallType`: 壁の詳細分類と状態管理
+/// - `WallIdentifier`: 所有権とトレーサビリティ
+/// - `ExtendStatus`: 迷路生成過程の状態追跡
+/// - `OutsideWallType`: 外壁の種類別分類
 ///
 /// ## 迷路システム内での役割
 /// - **Field**: 座標点配列での基本要素
@@ -180,11 +172,12 @@ pub enum MazePointStatus {
     /// - **ゴール探索**: 経路探索アルゴリズムでの有効ノード
     /// - **空間計算**: 迷路内の利用可能空間の計測
     /// - **描画処理**: 視覚的表現での背景色や空白表示
+    ///
     /// 通路（Path）
     ///
     /// - `PATH_TYPE`: 通路の状態（解決済み/未解決）
     /// - `NewMethodEnforcer`: 型安全性強制用
-    Path(PATH_TYPE, NewMethodEnforcer),
+    Path(PathType, NewMethodEnforcer),
 
     /// 壁（移動不可能な障害物）
     ///
@@ -247,6 +240,7 @@ pub enum MazePointStatus {
     Wall(WallType, Option<WallIdentifier>, NewMethodEnforcer),
 }
 
+#[allow(dead_code)]
 impl MazePointStatus {
     /// 通路状態を生成します
     ///
@@ -265,7 +259,7 @@ impl MazePointStatus {
     /// 通路状態の `MazePointStatus`
     /// 未解決通路（NOT_RESOLVED_PATH）を生成
     pub fn new_not_resolved_path() -> Self {
-        MazePointStatus::Path(PATH_TYPE::NOT_RESOLVED_PATH, NewMethodEnforcer::new())
+        MazePointStatus::Path(PathType::NotResolvedPath, NewMethodEnforcer::new())
     }
 
     /// この座標点が通路かどうかを判定します
@@ -286,12 +280,12 @@ impl MazePointStatus {
 
     /// 解決済み通路（RESOLVED_PATH）を生成
     pub fn new_resolved_path() -> Self {
-        MazePointStatus::Path(PATH_TYPE::RESOLVED_PATH, NewMethodEnforcer::new())
+        MazePointStatus::Path(PathType::ResolvedPath, NewMethodEnforcer::new())
     }
 
     /// この座標点が「解決済み通路」か判定
     pub fn is_resolved_path(&self) -> bool {
-        matches!(self, MazePointStatus::Path(PATH_TYPE::RESOLVED_PATH, _))
+        matches!(self, MazePointStatus::Path(PathType::ResolvedPath, _))
     }
 
     /// 迷路壁を生成します
@@ -808,7 +802,7 @@ impl MazePointStatus {
         }
         let wall_identifier = self.get_wall_identifier();
         if let Some(id) = wall_identifier {
-            return id.clone() == identifier.clone();
+            return *id == *identifier;
         }
         false
     }
@@ -1185,7 +1179,7 @@ mod tests {
     #[test]
     fn test_all_boolean_methods_extending_start_point() {
         let identifier1 = WallIdentifier::new();
-        let identifier2 = WallIdentifier::new();
+        let _identifier2 = WallIdentifier::new();
 
         let start_wall = MazePointStatus::new_start_point_outside_wall(identifier1);
         let extending_start =
@@ -1597,7 +1591,7 @@ mod tests {
 
         // Direct construction (possible but discouraged)
         let _direct_path =
-            MazePointStatus::Path(PATH_TYPE::NOT_RESOLVED_PATH, NewMethodEnforcer::new());
+            MazePointStatus::Path(PathType::NotResolvedPath, NewMethodEnforcer::new());
         let _direct_wall = MazePointStatus::Wall(
             WallType::new_not_checked_pillar(),
             None,

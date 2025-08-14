@@ -77,7 +77,7 @@ pub fn maze_generate_thread(
                                 point_stack, identifier
                             );
                             match point_stack.pop() {
-                                Some(val) => {
+                                Some(_val) => {
                                     debug!(
                                         "Current point stack(after_pop): {:?} {:?}",
                                         point_stack, identifier
@@ -115,6 +115,7 @@ pub fn maze_generate_thread(
     }
 }
 
+#[allow(dead_code)]
 fn output_maze_ascii_art(all_maze_points: HashMap<MazePoint, MazePointStatus>) -> String {
     let mut ascii_art = String::new();
     let x_size = all_maze_points.keys().map(|p| p.x()).max().unwrap_or(0) + 1;
@@ -141,7 +142,7 @@ pub fn maze_generate_monitor_thread(
         let (
             x,
             y,
-            all_maze_points,
+            _all_maze_points,
             all_start_points,
             extending_start_points,
             all_pillars,
@@ -186,7 +187,7 @@ pub fn maze_generate_monitor_thread(
             duration,
         );
 
-        //info!("\n{}", output_maze_ascii_art(all_maze_points));
+        //info!("\n{}", output_maze_ascii_art(_all_maze_points));
 
         if all_start_point_seeked {
             info!("All start points have been extended. Exiting monitor thread.");

@@ -91,10 +91,10 @@ impl NewMethodEnforcer {
 /// # 相互運用性
 ///
 /// ## 関連型との統合
-/// - [`MazePointStatus`]: 座標点の状態管理での使用
-/// - [`ExtendStatus`]: 拡張処理の状態追跡
-/// - [`OutsideWallType`]: 外壁の詳細分類
-/// - [`WallIdentifier`]: 壁の所有権管理
+/// - `MazePointStatus`: 座標点の状態管理での使用
+/// - `ExtendStatus`: 拡張処理の状態追跡
+/// - `OutsideWallType`: 外壁の詳細分類
+/// - `WallIdentifier`: 壁の所有権管理
 ///
 /// ## エラーハンドリング
 /// 不正な状態変換要求に対して、詳細なエラー情報を含む
@@ -204,6 +204,7 @@ pub enum WallType {
     MazeWall(NewMethodEnforcer),
 }
 
+#[allow(dead_code)]
 impl WallType {
     /// スタートポイント外壁を生成します
     ///
@@ -944,7 +945,7 @@ mod tests {
     #[test]
     fn test_error_message_quality() {
         // エラーメッセージの品質確認
-        let start_wall = WallType::new_start_point_outside_wall();
+        let _start_wall = WallType::new_start_point_outside_wall();
         let pillar = WallType::new_not_checked_pillar();
         let maze_wall = WallType::new_maze_wall();
 

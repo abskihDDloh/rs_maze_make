@@ -13,37 +13,9 @@ pub struct PathConnectivityGraph {
     pub point_to_node: HashMap<MazePoint, NodeIndex>,
     /// NodeIndexからMazePointへのマッピング
     pub node_to_point: HashMap<NodeIndex, MazePoint>,
-    /// 迷路のサイズ情報
-    x_size: u32,
-    y_size: u32,
 }
 
 impl PathConnectivityGraph {
-    #[cfg(test)]
-    pub fn new_empty(x_size: u32, y_size: u32) -> Self {
-        Self::new(x_size, y_size)
-    }
-
-    /// 新しいPathConnectivityGraphを作成する
-    ///
-    /// # Arguments
-    ///
-    /// * `x_size` - 迷路のX方向サイズ
-    /// * `y_size` - 迷路のY方向サイズ
-    ///
-    /// # Returns
-    ///
-    /// 新しいPathConnectivityGraphインスタンス
-    fn new(x_size: u32, y_size: u32) -> Self {
-        Self {
-            graph: UnGraph::new_undirected(),
-            point_to_node: HashMap::new(),
-            node_to_point: HashMap::new(),
-            x_size,
-            y_size,
-        }
-    }
-
     pub fn build_from_maze_points(
         maze_points: &HashMap<MazePoint, MazePointStatus>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -73,7 +45,7 @@ impl PathConnectivityGraph {
                     x_size,
                     y_size,
                     point,
-                    &maze_points,
+                    maze_points,
                 )?;
             }
         }
@@ -82,8 +54,6 @@ impl PathConnectivityGraph {
             graph,
             point_to_node,
             node_to_point,
-            x_size,
-            y_size,
         })
     }
 
