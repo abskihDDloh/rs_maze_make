@@ -1,6 +1,6 @@
 mod maze;
 use clap::{Parser, arg, command};
-use log::{LevelFilter, error, info};
+use log::{LevelFilter, debug, error, info};
 use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
@@ -116,6 +116,7 @@ fn save_maze_result_as_png(
     width: u32,
     height: u32,
     file_path: &PathBuf,
+    debug_flag: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let maze_i = maze_points.clone();
     let mut wall_identifiers: HashSet<WallIdentifier> = HashSet::new();
@@ -131,25 +132,28 @@ fn save_maze_result_as_png(
     let mut previous_color_list: HashSet<image::Rgba<u8>> = HashSet::new();
     let mut wall_color_list: HashMap<WallIdentifier, image::Rgba<u8>> = HashMap::new();
 
-    // wall_identifiersの件数だけループ
-    for wall_identifier in &wall_identifiers {
-        loop {
-            let mut rng = rand::rng();
-            let wall_color = image::Rgba([
-                rng.random_range(2..=254),
-                rng.random_range(2..=254),
-                rng.random_range(2..=254),
-                255u8,
-            ]);
-            if !previous_color_list.contains(&wall_color) {
-                previous_color_list.insert(wall_color);
-                wall_color_list.insert(*wall_identifier, wall_color);
-                break;
+    if debug_flag {
+        // デバッグモードのときは識別子ごとに壁の色を変える。(RGB2-254の範囲でランダムな色を使用)
+        // wall_identifiersの件数だけループ
+        for wall_identifier in &wall_identifiers {
+            loop {
+                let mut rng = rand::rng();
+                let wall_color = image::Rgba([
+                    rng.random_range(2..=254),
+                    rng.random_range(2..=254),
+                    rng.random_range(2..=254),
+                    255u8,
+                ]);
+                if !previous_color_list.contains(&wall_color) {
+                    previous_color_list.insert(wall_color);
+                    wall_color_list.insert(*wall_identifier, wall_color);
+                    break;
+                }
             }
         }
     }
 
-    info!(
+    debug!(
         "{} {} {}",
         previous_color_list.len(),
         wall_identifiers.len(),
@@ -157,11 +161,12 @@ fn save_maze_result_as_png(
     );
     for (point, status) in maze {
         let path_color = image::Rgba([255u8, 255u8, 255u8, 255u8]); // 白
+        let black_color = image::Rgba([0u8, 0u8, 0u8, 255u8]); // 黒
         let color = if status.is_wall() {
             if let Some(identifier) = status.get_wall_identifier() {
-                wall_color_list.get(identifier).unwrap_or(&path_color)
+                wall_color_list.get(identifier).unwrap_or(&black_color)
             } else {
-                &path_color
+                &black_color
             }
         } else {
             &path_color
@@ -174,14 +179,18 @@ fn save_maze_result_as_png(
     Ok(())
 }
 
-fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    
+fn start(
+    x_size: u32,
+    y_size: u32,
+    file_path: &str,
+    debug_flag: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     if file_path.is_empty() {
         // ファイルパスが空の場合はホームディレクトリに保存
         let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
         let default_file_name = format!("{}.png", chrono::Local::now().format("%Y%m%d%H%M%S"));
         let full_path = home_dir.join(default_file_name);
-        return start(x_size, y_size, full_path.to_str().unwrap());
+        return start(x_size, y_size, full_path.to_str().unwrap(), debug_flag);
     }
 
     // canonicalizeではなく、PathBufを直接使用
@@ -221,6 +230,7 @@ fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::e
         maze_guard.x_size(),
         maze_guard.y_size(),
         &full_path,
+        debug_flag,
     )?;
 
     Ok(())
@@ -229,7 +239,8 @@ fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::e
 fn main() {
     let args = Args::parse();
 
-    let log_level = if args.debug {
+    let debug_flag = args.debug;
+    let log_level = if debug_flag {
         LevelFilter::Debug
     } else {
         LevelFilter::Info
@@ -241,7 +252,7 @@ fn main() {
 
     info!("Application started with args: {:?}", args);
     let default_file_name = args.file_path.clone();
-    start(args.x_size, args.y_size, &default_file_name).unwrap_or_else(|e| {
+    start(args.x_size, args.y_size, &default_file_name, debug_flag).unwrap_or_else(|e| {
         error!("Failed to start maze generation: {}", e);
         std::process::exit(1);
     });
