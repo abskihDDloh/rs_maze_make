@@ -187,6 +187,24 @@ fn start(x_size: u32, y_size: u32, file_path: &str) -> Result<(), Box<dyn std::e
     // canonicalizeではなく、PathBufを直接使用
     let full_path = PathBuf::from(file_path);
 
+    if full_path.is_file() {
+        // ファイルが存在する場合の処理
+        // エラー。すでにファイルが存在する。
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("File already exists: {}", full_path.display()),
+        )));
+    }
+
+    if full_path.is_dir() {
+        // ディレクトリが存在する場合の処理
+        // エラー。ディレクトリはファイルではない。
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Path is a directory, not a file: {}", full_path.display()),
+        )));
+    }
+
     // 親ディレクトリが存在しない場合は作成
     if let Some(parent) = full_path.parent() {
         fs::create_dir_all(parent)?;
