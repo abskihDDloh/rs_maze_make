@@ -288,6 +288,15 @@ impl MazePointStatus {
         matches!(self, MazePointStatus::Path(PathType::ResolvedPath, _))
     }
 
+    pub fn new_start_or_end_path() -> Self {
+        MazePointStatus::Path(PathType::StartOrEnd, NewMethodEnforcer::new())
+    }
+
+    /// この座標点が「始点または終点通路」か判定
+    pub fn is_start_or_end_path(&self) -> bool {
+        matches!(self, MazePointStatus::Path(PathType::StartOrEnd, _))
+    }
+
     /// 迷路壁を生成します
     ///
     /// 柱間の拡張処理により中間点に配置される通常の壁を作成します。

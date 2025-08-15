@@ -1,5 +1,5 @@
 mod maze;
-mod solve_maze;
+mod set_start_and_goal;
 use clap::{Parser, arg, command};
 use log::{LevelFilter, debug, error, info};
 use rand::Rng;
@@ -20,7 +20,9 @@ use crate::{
         maze_field::field::Field,
         maze_thread::{maze_generate_monitor_thread, maze_generate_thread},
     },
-    solve_maze::solve::resolve_path_from_start_to_goal,
+    set_start_and_goal::{
+        set_start_and_goal_point::set_start_and_goal_point, solve::resolve_path_from_start_to_goal,
+    },
 };
 
 #[derive(Parser, Debug)]
@@ -176,6 +178,7 @@ fn save_maze_result_as_png(
         );
     }
 
+    let start_and_goal_color = image::Rgba([255u8, 1u8, 1u8, 128u8]); // 赤
     let path_color = image::Rgba([255u8, 255u8, 255u8, 255u8]); // 白
     let solved_path_color = image::Rgba([1u8, 255u8, 1u8, 128u8]); // 緑
     let black_color = image::Rgba([0u8, 0u8, 0u8, 255u8]); // 黒
@@ -186,12 +189,12 @@ fn save_maze_result_as_png(
             } else {
                 &black_color
             }
+        } else if status.is_start_or_end_path() {
+            &start_and_goal_color
         } else if solve_flag && status.is_resolved_path() {
             &solved_path_color
-        } else if status.is_path() {
-            &path_color
         } else {
-            &black_color
+            &path_color
         };
         debug!(
             "Point: {:?}, Color: {:?}, Status: {:?}",
@@ -263,9 +266,12 @@ fn start(
 
     let mut maze_points = maze_guard.get_all_maze_points_clone();
 
+    let sg: set_start_and_goal::start_and_goal_point::StartAndGoalPoint =
+        set_start_and_goal_point(&mut maze_points)?;
+
     if solve_flag {
         // 迷路を解く処理
-        let solve_list = resolve_path_from_start_to_goal(&mut maze_points)?;
+        let solve_list = resolve_path_from_start_to_goal(&mut maze_points, &sg)?;
         info!("Solved path: {:?}", solve_list);
     }
 

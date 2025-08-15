@@ -4,6 +4,8 @@
 /// - `NOT_RESOLVED_PATH`: まだ経路探索されていない通常の通路
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PathType {
+    /// 経路探索の始点もしくは終点。
+    StartOrEnd,
     /// 経路探索で到達済みの通路
     ResolvedPath,
     /// 未到達・未探索の通路
