@@ -1,6 +1,8 @@
 use crate::maze::maze_cell::maze_point::point::MazePoint;
 use crate::maze::maze_cell::maze_point::point_status::MazePointStatus;
-use crate::solve_maze::path_connectivity_graph::PathConnectivityGraph;
+use crate::set_start_and_goal::path_connectivity_graph::PathConnectivityGraph;
+use crate::set_start_and_goal::start_and_goal_point::StartAndGoalPoint;
+use log::debug;
 use petgraph::algo::astar;
 use std::collections::HashMap;
 
@@ -8,27 +10,26 @@ use std::collections::HashMap;
 ///
 /// # 引数
 /// - maze_points: 迷路の座標と状態の可変参照
+/// - start_and_goal: スタート・ゴール座標を保持する構造体
 ///
 /// # 戻り値
 /// - Ok(経路のMazePointリスト) または Err(エラー)
 pub fn resolve_path_from_start_to_goal(
     maze_points: &mut HashMap<MazePoint, MazePointStatus>,
+    start_and_goal: &StartAndGoalPoint,
 ) -> Result<Vec<MazePoint>, String> {
-    // 迷路サイズを取得
-    let (x_max, y_max) = maze_points.keys().fold((0, 0), |(x_max, y_max), p| {
-        (x_max.max(p.x()), y_max.max(p.y()))
-    });
-    let x_size = x_max + 1;
-    let y_size = y_max + 1;
-    let start = MazePoint::new(1, 1);
-    let goal = MazePoint::new(x_size - 2, y_size - 2);
+    let start = start_and_goal.start;
+    let goal = start_and_goal.goal;
 
-    // スタート・ゴールがPathでなければエラー
-    if !matches!(maze_points.get(&start), Some(s) if s.is_path()) {
-        return Err(format!("Start point ({:?}) is not a Path", start));
+    // スタート・ゴールのPathでなければエラー
+    if !matches!(maze_points.get(&start), Some(s) if s.is_start_or_end_path()) {
+        return Err(format!(
+            "Start point ({:?}) is not a StartOrEnd path",
+            start
+        ));
     }
-    if !matches!(maze_points.get(&goal), Some(g) if g.is_path()) {
-        return Err(format!("Goal point ({:?}) is not a Path", goal));
+    if !matches!(maze_points.get(&goal), Some(g) if g.is_start_or_end_path()) {
+        return Err(format!("Goal point ({:?}) is not a StartOrEnd path", goal));
     }
 
     // グラフ生成
@@ -50,9 +51,15 @@ pub fn resolve_path_from_start_to_goal(
         .filter_map(|node| node_to_point.get(&node).copied())
         .collect();
 
-    // 経路上のMazePointStatusを書き換え
+    // スタート・ゴール以外の経路上のMazePointStatusを書き換え
     for p in &path_points {
-        maze_points.insert(*p, MazePointStatus::new_resolved_path());
+        let status = maze_points
+            .get(p)
+            .ok_or(format!("MazePoint {:?} not found in maze_points", p))?;
+        debug!("Resolving path point: {:?}, Status: {:?}", p, status);
+        if !status.is_start_or_end_path() {
+            maze_points.insert(*p, MazePointStatus::new_resolved_path());
+        }
     }
     Ok(path_points)
 }
