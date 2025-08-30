@@ -151,3 +151,35 @@ impl StartAndGoalSetter {
         Ok(sg.clone())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::maze::maze_cell::maze_point::{point::MazePoint, point_status::MazePointStatus};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_set_start_and_goal_point_simple() {
+        // 2x2の単純な迷路を作成（全て通路）
+        let mut maze_points = HashMap::new();
+        for x in 0..2 {
+            for y in 0..2 {
+                maze_points.insert(
+                    MazePoint::new(x, y),
+                    MazePointStatus::new_not_resolved_path(),
+                );
+            }
+        }
+        let mut setter = StartAndGoalSetter::new(maze_points);
+        let sg = setter
+            .set_start_and_goal_point()
+            .expect("start/goal 決定に失敗");
+        // スタートとゴールが異なる点であること
+        assert_ne!(sg.start, sg.goal);
+        // どちらも迷路内の点であること
+        assert!(sg.start.x() < 2);
+        assert!(sg.start.y() < 2);
+        assert!(sg.goal.x() < 2);
+        assert!(sg.goal.y() < 2);
+    }
+}
