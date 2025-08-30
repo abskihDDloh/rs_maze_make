@@ -21,7 +21,7 @@ use crate::{
         maze_thread::{maze_generate_monitor_thread, maze_generate_thread},
     },
     set_start_and_goal::{
-        set_start_and_goal_point::set_start_and_goal_point, solve::resolve_path_from_start_to_goal,
+        set_start_and_goal_point::StartAndGoalSetter, solve::resolve_path_from_start_to_goal,
     },
 };
 
@@ -256,18 +256,18 @@ fn start(
     if let Some(parent) = full_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let maze_points = make_maze(x_size, y_size)?;
+    let maze_percell = make_maze(x_size, y_size)?;
 
-    let maze_guard = maze_points.read().map_err(|_| {
+    let maze_guard = maze_percell.read().map_err(|_| {
         Box::new(std::io::Error::other(
             "Failed to acquire read lock for maze points",
         )) as Box<dyn std::error::Error>
     })?;
 
-    let mut maze_points = maze_guard.get_all_maze_points_clone();
-
+    let mut setter = StartAndGoalSetter::new(maze_guard.get_all_maze_points_clone());
     let sg: set_start_and_goal::start_and_goal_point::StartAndGoalPoint =
-        set_start_and_goal_point(&mut maze_points)?;
+        setter.set_start_and_goal_point()?;
+    let mut maze_points = setter.get_all_maze_points_clone();
 
     if solve_flag {
         // 迷路を解く処理

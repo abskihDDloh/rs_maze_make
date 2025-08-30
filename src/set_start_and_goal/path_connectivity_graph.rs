@@ -5,7 +5,7 @@ use crate::maze::maze_cell::maze_point::point::MazePoint;
 use crate::maze::maze_cell::maze_point::point_status::MazePointStatus;
 
 /// Pathの連結性を分析するためのグラフ構造
-#[derive(Debug)]
+#[derive(Default)]
 pub struct PathConnectivityGraph {
     /// petgraphのグラフインスタンス
     pub graph: UnGraph<MazePoint, ()>,
@@ -16,6 +16,14 @@ pub struct PathConnectivityGraph {
 }
 
 impl PathConnectivityGraph {
+    fn default() -> Self {
+        PathConnectivityGraph {
+            graph: UnGraph::new_undirected(),
+            node_to_point: HashMap::new(),
+            point_to_node: HashMap::new(),
+        }
+    }
+
     pub fn build_from_maze_points(
         maze_points: &HashMap<MazePoint, MazePointStatus>,
     ) -> Result<Self, Box<dyn std::error::Error>> {

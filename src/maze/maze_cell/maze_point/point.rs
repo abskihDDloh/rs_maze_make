@@ -71,7 +71,7 @@ use std::{collections::HashSet, hash::Hash};
 /// - **距離計算**: 2点間のマンハッタン距離
 /// - **領域生成**: 矩形領域内の全座標点列挙
 /// - **隣接判定**: 指定距離内の隣接点検索
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy, Default)]
 pub struct MazePoint {
     /// X座標（横方向位置）
     x: u32,
@@ -80,6 +80,9 @@ pub struct MazePoint {
 }
 
 impl MazePoint {
+    fn default() -> Self {
+        MazePoint { x: 0, y: 0 }
+    }
     /// 新しい迷路座標点を作成します
     ///
     /// 指定されたX、Y座標で新しい `MazePoint` インスタンスを生成します。
