@@ -65,7 +65,7 @@ struct Args {
         short = 't',
         long = "number_of_threads",
         default_value = "0",
-        help = "迷路生成用のスレッド数を指定します。デフォルトはCPUコア数か4のうち大きい方です。"
+        help = "迷路生成用のスレッド数を指定します。デフォルトはCPUコア数か4のうち大きい方。最大64まで指定可能です。"
     )]
     number_of_threads: u32,
     #[arg(short = 'd', long = "debug", help = "デバッグモードを有効にします。")]
@@ -86,9 +86,9 @@ fn make_maze(
     let maze_points = Field::initialize_maze_points(x_size, y_size)?;
 
     info!("Maze initialized with size {}x{}", x_size, y_size);
-    let num_threads_u32 = std::cmp::max(max_threads, get_workers_limit()) + 1; // 監視スレッド用に+1
-
-    //エラーがあった場合は4にする。
+    let num_threads_u32_i = std::cmp::max(max_threads, get_workers_limit()) + 1; // 監視スレッド用に+1
+    let num_threads_u32 = std::cmp::min(num_threads_u32_i, 64); // 最大64まで
+    //u32をusizeに変換。変換できない場合は警告を
     let num_threads: usize = num_threads_u32.try_into().unwrap_or(4);
 
     let pool = ThreadPool::new(num_threads);
