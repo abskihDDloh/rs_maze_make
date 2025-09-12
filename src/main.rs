@@ -61,22 +61,37 @@ struct Args {
         help = "迷路生成スレッドごとに壁の色を変更します。"
     )]
     color: bool,
+    #[arg(
+        short = 't',
+        long = "number_of_threads",
+        default_value = "0",
+        help = "迷路生成用のスレッド数を指定します。デフォルトはCPUコア数か4のうち大きい方。最大64まで指定可能です。"
+    )]
+    number_of_threads: u32,
     #[arg(short = 'd', long = "debug", help = "デバッグモードを有効にします。")]
     debug: bool,
 }
 
-fn get_workers_limit() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
+fn get_workers_limit() -> u32 {
+    //コア数-1を返す。1未満の場合は1を返す。
+    let num_cpus = num_cpus::get() as u32;
+    if num_cpus > 1 { num_cpus - 1 } else { 1 }
 }
 
-fn make_maze(x_size: u32, y_size: u32) -> Result<Arc<RwLock<Field>>, Box<dyn std::error::Error>> {
+fn make_maze(
+    x_size: u32,
+    y_size: u32,
+    max_threads: u32,
+) -> Result<Arc<RwLock<Field>>, Box<dyn std::error::Error>> {
     let maze_points = Field::initialize_maze_points(x_size, y_size)?;
 
     info!("Maze initialized with size {}x{}", x_size, y_size);
-    let num_threads = get_workers_limit();
-    let pool = ThreadPool::new(num_threads + 1); // 監視スレッド用に+1
+    let num_threads_u32_i = std::cmp::max(max_threads, get_workers_limit()) + 1; // 監視スレッド用に+1
+    let num_threads_u32 = std::cmp::min(num_threads_u32_i, 64); // 最大64まで
+    //u32をusizeに変換。変換できない場合は警告を
+    let num_threads: usize = num_threads_u32.try_into().unwrap_or(4);
+
+    let pool = ThreadPool::new(num_threads);
     info!(
         "ThreadPool created with {} threads (+ 1 monitor thread)",
         num_threads
@@ -147,7 +162,10 @@ fn save_maze_result_as_png(
         }
     }
     let maze = maze_points.clone();
-    let mut img = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::new(width, height);
+    let mut img = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::new(
+        width.try_into().unwrap(),
+        height.try_into().unwrap(),
+    );
     let mut previous_color_list: HashSet<image::Rgba<u8>> = HashSet::new();
     let mut wall_color_list: HashMap<WallIdentifier, image::Rgba<u8>> = HashMap::new();
 
@@ -211,6 +229,7 @@ fn save_maze_result_as_png(
 fn start(
     x_size: u32,
     y_size: u32,
+    max_threads: u32,
     file_path: &str,
     color_flag: bool,
     solve_flag: bool,
@@ -224,6 +243,7 @@ fn start(
         return start(
             x_size,
             y_size,
+            max_threads,
             full_path.to_str().unwrap(),
             color_flag,
             solve_flag,
@@ -256,7 +276,7 @@ fn start(
     if let Some(parent) = full_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let maze_percell = make_maze(x_size, y_size)?;
+    let maze_percell = make_maze(x_size, y_size, max_threads)?;
 
     let maze_guard = maze_percell.read().map_err(|_| {
         Box::new(std::io::Error::other(
@@ -292,6 +312,7 @@ fn main() {
     let solve_flag = args.solve;
     let color_flag = args.color;
     let debug_flag = args.debug;
+    let max_threads = args.number_of_threads;
     let log_level = if debug_flag {
         LevelFilter::Debug
     } else {
@@ -307,6 +328,7 @@ fn main() {
     start(
         args.x_size,
         args.y_size,
+        max_threads,
         &default_file_name,
         color_flag,
         solve_flag,
