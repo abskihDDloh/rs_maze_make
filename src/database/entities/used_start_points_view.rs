@@ -8,7 +8,7 @@ pub struct Model {
     pub x: u64,
     #[sea_orm(primary_key, auto_increment = false)]
     pub y: u64,
-    #[sea_orm(column_type = "String", primary_key, auto_increment = false)]
+    #[sea_orm(primary_key, auto_increment = false)]
     pub thread_id: String,
     #[sea_orm(primary_key, auto_increment = false)]
     pub create_unixtime: NaiveDateTime,
