@@ -1,0 +1,28 @@
+mysql -u root -p
+
+select user, host from mysql.user;
+create user 'mazemake_u'@'localhost' identified by 'DB_PASSWORD';
+create user 'mazemake_u'@'127.0.0.1' identified by 'DB_PASSWORD';
+create user 'mazemake_u'@'192.168.%' identified by 'DB_PASSWORD';
+create user 'mazemake_u'@'fe80:%' identified by 'DB_PASSWORD';
+select user, host from mysql.user;
+
+
+create database MAZEMAKE;
+
+GRANT SELECT ON `mysql`.`proc` TO 'mazemake_u'@'localhost' identified by 'DB_PASSWORD';
+GRANT SELECT ON `mysql`.`proc` TO 'mazemake_u'@'127.0.0.1' identified by 'DB_PASSWORD';
+GRANT SELECT ON `mysql`.`proc` TO 'mazemake_u'@'192.168.%' identified by 'DB_PASSWORD';
+GRANT SELECT ON `mysql`.`proc` TO 'mazemake_u'@'fe80:%' identified by 'DB_PASSWORD';
+
+grant all privileges on MAZEMAKE.* to 'mazemake_u'@'localhost' identified by 'DB_PASSWORD';
+grant all privileges on MAZEMAKE.* to 'mazemake_u'@'127.0.0.1' identified by 'DB_PASSWORD';
+grant all privileges on MAZEMAKE.* to 'mazemake_u'@'192.168.%' identified by 'DB_PASSWORD';
+grant all privileges on MAZEMAKE.* to 'mazemake_u'@'fe80:%' identified by 'DB_PASSWORD';
+
+GRANT CREATE VIEW ON MAZEMAKE.* to 'mazemake_u'@'localhost' identified by 'DB_PASSWORD';
+GRANT CREATE VIEW ON MAZEMAKE.* to 'mazemake_u'@'127.0.0.1' identified by 'DB_PASSWORD';
+GRANT CREATE VIEW ON MAZEMAKE.* to 'mazemake_u'@'192.168.%' identified by 'DB_PASSWORD';
+GRANT CREATE VIEW ON MAZEMAKE.* to 'mazemake_u'@'fe80:%' identified by 'DB_PASSWORD';
+
+

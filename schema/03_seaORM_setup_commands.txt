@@ -1,0 +1,6 @@
+yum -y install openssl-devel
+
+cargo install sea-orm-cli
+
+sea-orm-cli generate entity -u mysql://mazemake_u:DB_PASSWORD@localhost:3306/MAZEMAKE -o src/database/entities
+
