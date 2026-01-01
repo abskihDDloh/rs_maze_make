@@ -1,4 +1,6 @@
-mysql -u root -p
+
+# Create user and DB.
+$ mysql -u root -p
 
 select user, host from mysql.user;
 create user 'mazemake_u'@'localhost' identified by 'DB_PASSWORD';
@@ -26,3 +28,8 @@ GRANT CREATE VIEW ON MAZEMAKE.* to 'mazemake_u'@'192.168.%' identified by 'DB_PA
 GRANT CREATE VIEW ON MAZEMAKE.* to 'mazemake_u'@'fe80:%' identified by 'DB_PASSWORD';
 
 
+# Export schema
+$ mysqldump -u mazemake_u -p --no-data --routines --triggers MAZEMAKE > 02_db_schema.sql
+
+# Import_schema
+$ mysql -u mazemake_u -p MAZEMAKE < 02_db_schema.sql
