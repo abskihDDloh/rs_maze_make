@@ -1,9 +1,9 @@
 use rand::Rng;
-use sea_orm::{ActiveValue::Set, DbConn, EntityTrait, QueryTrait, TransactionTrait};
+use sea_orm::{ConnectionTrait, DbConn, EntityTrait, Statement, TransactionTrait};
 
 use crate::maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier};
 
-pub async fn select_random_start_point_from_db(
+pub(in crate::maze) async fn select_random_start_point_from_db(
     db: &DbConn,
     tid: &MazeThreadIdentifier,
 ) -> Result<MazePoint, Box<dyn std::error::Error>> {
@@ -22,19 +22,23 @@ pub async fn select_random_start_point_from_db(
     let selected_point = &unused_start_points[random_index];
     let x = selected_point.x;
     let y = selected_point.y;
-    // 選択したスタートポイントとMazeThreadIdentifierの内容をTHERAD_LISTに登録する。
-    let new_therad_list = crate::database::entities::therad_list::ActiveModel {
-        id: sea_orm::ActiveValue::NotSet,
-        thread_id: Set(tid.as_str()),
-        create_unixtime: Set(tid
-            .unix_time_as_date_time_utc()
-            .ok_or("Failed to convert unix_time to DateTimeUtc")?),
-        start_x: Set(x),
-        start_y: Set(y),
-    };
-    crate::database::entities::therad_list::Entity::insert(new_therad_list)
-        .exec(&txn)
-        .await?;
+    let tid_str = tid.as_str();
+    let unix_time = tid
+        .unix_time_as_date_time_utc()
+        .ok_or("Failed to convert unix_time to DateTimeUtc")?;
+    // 選択したスタートポイントとMazeThreadIdentifierの内容をADD_NEW_THREADプロシージャを使ってTHERAD_LISTテーブルとMAZE_FIELDテーブルに登録する。
+    let sql = "CALL ADD_NEW_THREAD(?, ?, ?, ?)";
+    txn.execute(Statement::from_sql_and_values(
+        sea_orm::DbBackend::MySql,
+        sql,
+        vec![
+            x.into(),
+            y.into(),
+            tid_str.to_string().into(),
+            unix_time.into(),
+        ],
+    ))
+    .await?;
     txn.commit().await?;
     Ok(MazePoint::new(x, y))
 }
