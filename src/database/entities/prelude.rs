@@ -3,7 +3,9 @@
 pub use super::maze_cell::Entity as MazeCell;
 pub use super::maze_cell_type::Entity as MazeCellType;
 pub use super::maze_field::Entity as MazeField;
-pub use super::therad_list::Entity as TheradList;
+pub use super::outside_wall_start_points_view::Entity as OutsideWallStartPointsView;
 pub use super::start_points_view::Entity as StartPointsView;
-pub use super::unused_start_point_view::Entity as UnusedStartPointView;
+pub use super::therad_list::Entity as TheradList;
+pub use super::unused_start_points_view::Entity as UnusedStartPointsView;
+pub use super::used_outside_wall_start_points_view::Entity as UsedOutsideWallStartPointsView;
 pub use super::used_start_points_view::Entity as UsedStartPointsView;
