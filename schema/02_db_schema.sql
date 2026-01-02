@@ -66,6 +66,19 @@ CREATE TABLE `MAZE_FIELD` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Temporary table structure for view `OUTSIDE_WALL_START_POINTS_VIEW`
+--
+
+DROP TABLE IF EXISTS `OUTSIDE_WALL_START_POINTS_VIEW`;
+/*!50001 DROP VIEW IF EXISTS `OUTSIDE_WALL_START_POINTS_VIEW`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8mb4;
+/*!50001 CREATE VIEW `OUTSIDE_WALL_START_POINTS_VIEW` AS SELECT
+ 1 AS `X`,
+  1 AS `Y` */;
+SET character_set_client = @saved_cs_client;
+
+--
 -- Temporary table structure for view `START_POINTS_VIEW`
 --
 
@@ -133,16 +146,31 @@ DELIMITER ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
 
 --
--- Temporary table structure for view `UNUSED_START_POINT_VIEW`
+-- Temporary table structure for view `UNUSED_START_POINTS_VIEW`
 --
 
-DROP TABLE IF EXISTS `UNUSED_START_POINT_VIEW`;
-/*!50001 DROP VIEW IF EXISTS `UNUSED_START_POINT_VIEW`*/;
+DROP TABLE IF EXISTS `UNUSED_START_POINTS_VIEW`;
+/*!50001 DROP VIEW IF EXISTS `UNUSED_START_POINTS_VIEW`*/;
 SET @saved_cs_client     = @@character_set_client;
 SET character_set_client = utf8mb4;
-/*!50001 CREATE VIEW `UNUSED_START_POINT_VIEW` AS SELECT
+/*!50001 CREATE VIEW `UNUSED_START_POINTS_VIEW` AS SELECT
  1 AS `X`,
   1 AS `Y` */;
+SET character_set_client = @saved_cs_client;
+
+--
+-- Temporary table structure for view `USED_OUTSIDE_WALL_START_POINTS_VIEW`
+--
+
+DROP TABLE IF EXISTS `USED_OUTSIDE_WALL_START_POINTS_VIEW`;
+/*!50001 DROP VIEW IF EXISTS `USED_OUTSIDE_WALL_START_POINTS_VIEW`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8mb4;
+/*!50001 CREATE VIEW `USED_OUTSIDE_WALL_START_POINTS_VIEW` AS SELECT
+ 1 AS `X`,
+  1 AS `Y`,
+  1 AS `THREAD_ID`,
+  1 AS `CREATE_UNIXTIME` */;
 SET character_set_client = @saved_cs_client;
 
 --
@@ -165,6 +193,24 @@ SET character_set_client = @saved_cs_client;
 --
 
 --
+-- Final view structure for view `OUTSIDE_WALL_START_POINTS_VIEW`
+--
+
+/*!50001 DROP VIEW IF EXISTS `OUTSIDE_WALL_START_POINTS_VIEW`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY DEFINER */
+/*!50001 VIEW `OUTSIDE_WALL_START_POINTS_VIEW` AS select `sp`.`X` AS `X`,`sp`.`Y` AS `Y` from (`START_POINTS_VIEW` `sp` join (select max(`START_POINTS_VIEW`.`X`) AS `max_x`,min(`START_POINTS_VIEW`.`X`) AS `min_x`,max(`START_POINTS_VIEW`.`Y`) AS `max_y`,min(`START_POINTS_VIEW`.`Y`) AS `min_y` from `START_POINTS_VIEW`) `b`) where `sp`.`X` = `b`.`max_x` or `sp`.`Y` = `b`.`max_y` or `sp`.`X` = `b`.`min_x` or `sp`.`Y` = `b`.`min_y` */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
 -- Final view structure for view `START_POINTS_VIEW`
 --
 
@@ -183,10 +229,10 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET collation_connection      = @saved_col_connection */;
 
 --
--- Final view structure for view `UNUSED_START_POINT_VIEW`
+-- Final view structure for view `UNUSED_START_POINTS_VIEW`
 --
 
-/*!50001 DROP VIEW IF EXISTS `UNUSED_START_POINT_VIEW`*/;
+/*!50001 DROP VIEW IF EXISTS `UNUSED_START_POINTS_VIEW`*/;
 /*!50001 SET @saved_cs_client          = @@character_set_client */;
 /*!50001 SET @saved_cs_results         = @@character_set_results */;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
@@ -194,8 +240,26 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET character_set_results     = utf8mb4 */;
 /*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
-/*!50001 VIEW `UNUSED_START_POINT_VIEW` AS select `MAZE_FIELD`.`X` AS `X`,`MAZE_FIELD`.`Y` AS `Y` from (`MAZE_FIELD` join `START_POINTS_VIEW` on(`MAZE_FIELD`.`X` = `START_POINTS_VIEW`.`X` and `MAZE_FIELD`.`Y` = `START_POINTS_VIEW`.`Y`)) where `MAZE_FIELD`.`CELL_OWNER_THREAD_ID` is null */;
+/*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY DEFINER */
+/*!50001 VIEW `UNUSED_START_POINTS_VIEW` AS select `MAZE_FIELD`.`X` AS `X`,`MAZE_FIELD`.`Y` AS `Y` from (`MAZE_FIELD` join `START_POINTS_VIEW` on(`MAZE_FIELD`.`X` = `START_POINTS_VIEW`.`X` and `MAZE_FIELD`.`Y` = `START_POINTS_VIEW`.`Y`)) where `MAZE_FIELD`.`CELL_OWNER_THREAD_ID` is null */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
+-- Final view structure for view `USED_OUTSIDE_WALL_START_POINTS_VIEW`
+--
+
+/*!50001 DROP VIEW IF EXISTS `USED_OUTSIDE_WALL_START_POINTS_VIEW`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY DEFINER */
+/*!50001 VIEW `USED_OUTSIDE_WALL_START_POINTS_VIEW` AS select `o`.`X` AS `X`,`o`.`Y` AS `Y`,`t`.`THREAD_ID` AS `THREAD_ID`,`t`.`CREATE_UNIXTIME` AS `CREATE_UNIXTIME` from (`OUTSIDE_WALL_START_POINTS_VIEW` `o` join `THERAD_LIST` `t` on(`t`.`START_X` = `o`.`X` and `t`.`START_Y` = `o`.`Y`)) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -227,4 +291,4 @@ SET character_set_client = @saved_cs_client;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-01 17:07:51
+-- Dump completed on 2026-01-02 14:05:05
