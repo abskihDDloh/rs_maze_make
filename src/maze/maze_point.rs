@@ -80,6 +80,12 @@ pub fn select_between_points(from: &MazePoint, to: &MazePoint) -> Vec<MazePoint>
     points
 }
 
+pub fn select_between_points_without_edge(from: &MazePoint, to: &MazePoint) -> Vec<MazePoint> {
+    let mut points = select_between_points(from, to);
+    points.retain(|p| p != from && p != to);
+    points
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
