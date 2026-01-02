@@ -29,6 +29,5 @@ target
 # More information here https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html
 Cargo.lock
 
-**/.env
-.env
+# 環境設定ファイル (注意: 機密情報を含む可能性があるので、コミットしないように注意！)
 .env
