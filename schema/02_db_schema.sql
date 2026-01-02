@@ -54,9 +54,9 @@ CREATE TABLE `MAZE_FIELD` (
   `X` bigint(20) unsigned NOT NULL,
   `Y` bigint(20) unsigned NOT NULL,
   `CELL_TYPE` varchar(20) NOT NULL,
-  `CELL_OWNER_THREAD_ID` timestamp(6) NULL DEFAULT NULL,
+  `CELL_OWNER_THREAD_ID` bigint(20) unsigned DEFAULT NULL,
   PRIMARY KEY (`X`,`Y`),
-  UNIQUE KEY `UNIQUE_CELLS` (`X`,`Y`,`CELL_OWNER_THREAD_ID`),
+  UNIQUE KEY `UNIQUE_CELLS` (`X`,`Y`,`CELL_OWNER_THREAD_ID`) USING BTREE,
   KEY `FK_TYPE` (`CELL_TYPE`),
   KEY `FK_OWNER` (`CELL_OWNER_THREAD_ID`),
   CONSTRAINT `FK_CELL` FOREIGN KEY (`X`, `Y`) REFERENCES `MAZE_CELL` (`X`, `Y`),
@@ -99,7 +99,7 @@ DROP TABLE IF EXISTS `THERAD_LIST`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `THERAD_LIST` (
-  `ID` timestamp(6) NOT NULL DEFAULT current_timestamp(6),
+  `ID` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `THREAD_ID` varchar(80) NOT NULL,
   `CREATE_UNIXTIME` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000',
   `START_X` bigint(20) unsigned NOT NULL,
@@ -291,4 +291,4 @@ SET character_set_client = @saved_cs_client;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-02 14:05:05
+-- Dump completed on 2026-01-02 16:13:43
