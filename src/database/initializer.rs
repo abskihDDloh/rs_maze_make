@@ -125,10 +125,10 @@ pub async fn initialize_db(
             "x_max and y_max must be odd numbers and >= 5",
         )));
     }
-    if x_max > i32::MAX as u64 || y_max > i32::MAX as u64 {
+    if x_max > i64::MAX as u64 || y_max > i64::MAX as u64 {
         return Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "x_max and y_max must be within the range of i32",
+            "x_max and y_max must be within the range of i64",
         )));
     }
 
@@ -167,43 +167,6 @@ mod tests {
         assert_eq!(END, "END");
     }
 
-    #[tokio::test]
-    async fn test_initialize_maze_cell_validation_even_x() {
-        // Create a minimal mock - we'll just test validation logic
-        // Since we can't easily mock SeaORM without the mock feature,
-        // we'll focus on testing the validation logic
-
-        // We can't actually test without a real DB connection,
-        // but we can document expected behavior
-
-        // Even x should fail: initialize_maze_cell(&db, 6, 5)
-        // Expected: Err with "x_max and y_max must be odd numbers and >= 5"
-    }
-
-    #[tokio::test]
-    async fn test_initialize_maze_cell_validation_even_y() {
-        // Even y should fail: initialize_maze_cell(&db, 5, 8)
-        // Expected: Err with "x_max and y_max must be odd numbers and >= 5"
-    }
-
-    #[tokio::test]
-    async fn test_initialize_maze_cell_validation_small_x() {
-        // x < 5 should fail: initialize_maze_cell(&db, 3, 5)
-        // Expected: Err with "x_max and y_max must be odd numbers and >= 5"
-    }
-
-    #[tokio::test]
-    async fn test_initialize_maze_cell_validation_small_y() {
-        // y < 5 should fail: initialize_maze_cell(&db, 5, 3)
-        // Expected: Err with "x_max and y_max must be odd numbers and >= 5"
-    }
-
-    #[tokio::test]
-    async fn test_initialize_maze_cell_validation_overflow() {
-        // Value > i32::MAX should fail: initialize_maze_cell(&db, i32::MAX as u64 + 2, 5)
-        // Expected: Err with "x_max and y_max must be within the range of i32"
-    }
-
     // Helper function to validate input parameters
     fn validate_maze_dimensions(x_max: u64, y_max: u64) -> Result<(), String> {
         if x_max < 5 || y_max < 5 {
@@ -212,8 +175,8 @@ mod tests {
         if x_max.is_multiple_of(2) || y_max.is_multiple_of(2) {
             return Err("x_max and y_max must be odd numbers".to_string());
         }
-        if x_max > i32::MAX as u64 || y_max > i32::MAX as u64 {
-            return Err("x_max and y_max must be within the range of i32".to_string());
+        if x_max > i64::MAX as u64 || y_max > i64::MAX as u64 {
+            return Err("x_max and y_max must be within the range of i64".to_string());
         }
         Ok(())
     }
@@ -241,7 +204,7 @@ mod tests {
 
     #[test]
     fn test_validate_maze_dimensions_overflow() {
-        let too_large = (i32::MAX as u64) + 2;
+        let too_large = (i64::MAX as u64) + 2;
         assert!(validate_maze_dimensions(too_large, 5).is_err());
         assert!(validate_maze_dimensions(5, too_large).is_err());
     }
