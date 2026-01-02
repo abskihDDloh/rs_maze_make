@@ -5,8 +5,8 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "THERAD_LIST")]
 pub struct Model {
-    #[sea_orm(column_name = "ID", primary_key, auto_increment = false)]
-    pub id: DateTimeUtc,
+    #[sea_orm(column_name = "ID", primary_key)]
+    pub id: u64,
     #[sea_orm(column_name = "THREAD_ID")]
     pub thread_id: String,
     #[sea_orm(column_name = "CREATE_UNIXTIME")]

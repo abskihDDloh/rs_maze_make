@@ -1,38 +1,26 @@
 use sea_orm::{DatabaseTransaction, EntityTrait, TransactionTrait};
 
-async fn erase_maze_field(
-    _db: &sea_orm::DbConn,
-    txn: &DatabaseTransaction,
-) -> Result<(), sea_orm::DbErr> {
+async fn erase_maze_field(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
     crate::database::entities::maze_field::Entity::delete_many()
         .exec(txn)
         .await?;
     Ok(())
 }
 
-async fn erase_therad_list(
-    _db: &sea_orm::DbConn,
-    txn: &DatabaseTransaction,
-) -> Result<(), sea_orm::DbErr> {
+async fn erase_therad_list(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
     crate::database::entities::therad_list::Entity::delete_many()
         .exec(txn)
         .await?;
 
     Ok(())
 }
-async fn erase_maze_cell(
-    _db: &sea_orm::DbConn,
-    txn: &DatabaseTransaction,
-) -> Result<(), sea_orm::DbErr> {
+async fn erase_maze_cell(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
     crate::database::entities::maze_cell::Entity::delete_many()
         .exec(txn)
         .await?;
     Ok(())
 }
-async fn erase_maze_cell_type(
-    _db: &sea_orm::DbConn,
-    txn: &DatabaseTransaction,
-) -> Result<(), sea_orm::DbErr> {
+async fn erase_maze_cell_type(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
     crate::database::entities::maze_cell_type::Entity::delete_many()
         .exec(txn)
         .await?;
@@ -46,7 +34,6 @@ pub const START: &str = "START";
 pub const END: &str = "END";
 
 async fn initialize_maze_cell(
-    db: &sea_orm::DbConn,
     txn: &DatabaseTransaction,
     x_max: u64,
     y_max: u64,
@@ -66,10 +53,7 @@ async fn initialize_maze_cell(
     Ok(())
 }
 
-async fn initialize_maze_cell_type(
-    db: &sea_orm::DbConn,
-    txn: &DatabaseTransaction,
-) -> Result<(), sea_orm::DbErr> {
+async fn initialize_maze_cell_type(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
     let cell_types = vec![WALL, PATH, PILLAR, START, END];
 
     for cell_type in cell_types {
@@ -83,7 +67,6 @@ async fn initialize_maze_cell_type(
     Ok(())
 }
 async fn initialize_maze_field(
-    db: &sea_orm::DbConn,
     txn: &DatabaseTransaction,
     x_max: u64,
     y_max: u64,
@@ -135,17 +118,17 @@ pub async fn initialize_db(
     let txn = db.begin().await?;
 
     // First, delete child tables that reference parent tables (foreign key constraints)
-    erase_maze_field(db, &txn).await?;
-    erase_therad_list(db, &txn).await?;
+    erase_maze_field(&txn).await?;
+    erase_therad_list(&txn).await?;
 
     // Then delete and recreate parent tables
-    erase_maze_cell_type(db, &txn).await?;
-    erase_maze_cell(db, &txn).await?;
+    erase_maze_cell_type(&txn).await?;
+    erase_maze_cell(&txn).await?;
 
     // Now recreate the data
-    initialize_maze_cell_type(db, &txn).await?;
-    initialize_maze_cell(db, &txn, x_max, y_max).await?;
-    initialize_maze_field(db, &txn, x_max, y_max).await?;
+    initialize_maze_cell_type(&txn).await?;
+    initialize_maze_cell(&txn, x_max, y_max).await?;
+    initialize_maze_field(&txn, x_max, y_max).await?;
 
     txn.commit().await?;
     Ok(())

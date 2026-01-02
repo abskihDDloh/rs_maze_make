@@ -12,7 +12,7 @@ pub struct Model {
     #[sea_orm(column_name = "CELL_TYPE")]
     pub cell_type: String,
     #[sea_orm(column_name = "CELL_OWNER_THREAD_ID")]
-    pub cell_owner_thread_id: Option<DateTimeUtc>,
+    pub cell_owner_thread_id: Option<u64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
