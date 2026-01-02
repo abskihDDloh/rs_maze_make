@@ -3,26 +3,24 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "THERAD_LIST")]
+#[sea_orm(table_name = "THREAD_LIST")]
 pub struct Model {
-    #[sea_orm(column_name = "ID", primary_key)]
+    #[sea_orm(column_name = "ID", primary_key, auto_increment = true)]
     pub id: u64,
     #[sea_orm(column_name = "THREAD_ID")]
     pub thread_id: String,
     #[sea_orm(column_name = "CREATE_UNIXTIME")]
     pub create_unixtime: DateTimeUtc,
-    #[sea_orm(column_name = "START_X")]
-    pub start_x: u64,
-    #[sea_orm(column_name = "START_Y")]
-    pub start_y: u64,
+    #[sea_orm(column_name = "START_CELL", unique)]
+    pub start_cell: u64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::maze_cell::Entity",
-        from = "(Column::StartX, Column::StartY)",
-        to = "(super::maze_cell::Column::X, super::maze_cell::Column::Y)",
+        from = "Column::StartCell",
+        to = "super::maze_cell::Column::Id",
         on_update = "Restrict",
         on_delete = "Restrict"
     )]
@@ -39,10 +37,7 @@ impl Related<super::maze_cell::Entity> for Entity {
 
 impl Related<super::maze_field::Entity> for Entity {
     fn to() -> RelationDef {
-        super::maze_cell::Relation::MazeField.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::maze_cell::Relation::TheradList.def().rev())
+        Relation::MazeField.def()
     }
 }
 

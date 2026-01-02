@@ -1,17 +1,22 @@
-use chrono::NaiveDateTime;
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, DeriveEntityModel, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "USED_START_POINTS_VIEW")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(primary_key, column_name = "CELL_ID")]
+    pub cell_id: u64,
+    #[sea_orm(column_name = "X")]
     pub x: u64,
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(column_name = "Y")]
     pub y: u64,
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(column_name = "CELL_TYPE")]
+    pub cell_type: String,
+    #[sea_orm(column_name = "CELL_OWNER_THREAD_ID")]
+    pub cell_owner_thread_id: u64,
+    #[sea_orm(column_name = "THREAD_ID")]
     pub thread_id: String,
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub create_unixtime: NaiveDateTime,
+    #[sea_orm(column_name = "CREATE_UNIXTIME")]
+    pub create_unixtime: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

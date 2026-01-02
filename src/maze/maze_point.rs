@@ -13,7 +13,7 @@ impl MazePoint {
         MazePoint { x: 0, y: 0 }
     }
 
-    pub fn new(x: u64, y: u64) -> Self {
+    pub  fn new(x: u64, y: u64) -> Self {
         MazePoint { x, y }
     }
 
@@ -24,7 +24,7 @@ impl MazePoint {
     /// # 戻り値
     ///
     /// X座標値（0以上のu64値）
-    pub fn x(&self) -> u64 {
+    pub  fn x(&self) -> u64 {
         self.x
     }
 
@@ -35,11 +35,11 @@ impl MazePoint {
     /// # 戻り値
     ///
     /// Y座標値（0以上のu64値）
-    pub fn y(&self) -> u64 {
+    pub  fn y(&self) -> u64 {
         self.y
     }
 
-    pub fn generate_adjacent_maze_points(&self, distance: u64) -> Vec<MazePoint> {
+    pub  fn generate_adjacent_maze_points(&self, distance: u64) -> Vec<MazePoint> {
         // 上下左右に指定された距離だけ離れた位置を生成
         // オーバーフローの場合は最大値、アンダーフローの場合は最小値
         let mut points = HashSet::from([
@@ -56,7 +56,7 @@ impl MazePoint {
     }
 }
 
-pub fn get_between_points(from: &MazePoint, to: &MazePoint) -> Vec<MazePoint> {
+pub fn select_between_points(from: &MazePoint, to: &MazePoint) -> Vec<MazePoint> {
     let mut points = Vec::new();
 
     let (x_start, x_end) = if from.x() < to.x() {
@@ -141,7 +141,7 @@ mod tests {
         let from = MazePoint::new(1, 1);
         let to = MazePoint::new(2, 2);
 
-        let points = get_between_points(&from, &to);
+        let points = select_between_points(&from, &to);
 
         let expected = vec![
             MazePoint::new(1, 1),
@@ -158,7 +158,7 @@ mod tests {
         let from = MazePoint::new(3, 4);
         let to = MazePoint::new(1, 2);
 
-        let points = get_between_points(&from, &to);
+        let points = select_between_points(&from, &to);
         let expected = vec![
             MazePoint::new(1, 2),
             MazePoint::new(1, 3),

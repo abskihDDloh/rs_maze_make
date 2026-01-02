@@ -1,11 +1,15 @@
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, DeriveEntityModel, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "OUTSIDE_WALL_START_POINTS_VIEW")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(primary_key, column_name = "CELL_ID", auto_increment = true)]
+    pub cell_id: u64,
+    #[sea_orm(column_name = "CELL_TYPE")]
+    pub cell_type: String,
+    #[sea_orm(column_name = "X")]
     pub x: u64,
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(column_name = "Y")]
     pub y: u64,
 }
 

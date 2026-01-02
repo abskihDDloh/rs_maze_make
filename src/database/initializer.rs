@@ -7,8 +7,8 @@ async fn erase_maze_field(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbEr
     Ok(())
 }
 
-async fn erase_therad_list(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
-    crate::database::entities::therad_list::Entity::delete_many()
+async fn erase_thread_list(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
+    crate::database::entities::thread_list::Entity::delete_many()
         .exec(txn)
         .await?;
 
@@ -43,6 +43,7 @@ async fn initialize_maze_cell(
             let new_start_point = crate::database::entities::maze_cell::ActiveModel {
                 x: sea_orm::ActiveValue::Set(x),
                 y: sea_orm::ActiveValue::Set(y),
+                id: sea_orm::ActiveValue::NotSet,
             };
             crate::database::entities::maze_cell::Entity::insert(new_start_point)
                 .exec(txn)
@@ -71,26 +72,30 @@ async fn initialize_maze_field(
     x_max: u64,
     y_max: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for x in 0..x_max {
-        for y in 0..y_max {
-            let new_cell_type: String;
-            if x % 2 == 0 && y % 2 == 0 {
-                new_cell_type = PILLAR.to_string();
-            } else if x == 0 || x == x_max - 1 || y == 0 || y == y_max - 1 {
-                new_cell_type = WALL.to_string();
-            } else {
-                new_cell_type = PATH.to_string();
-            }
-            let new_field = crate::database::entities::maze_field::ActiveModel {
-                x: sea_orm::ActiveValue::Set(x),
-                y: sea_orm::ActiveValue::Set(y),
-                cell_type: sea_orm::ActiveValue::Set(new_cell_type),
-                cell_owner_thread_id: sea_orm::ActiveValue::Set(None),
-            };
-            crate::database::entities::maze_field::Entity::insert(new_field)
-                .exec(txn)
-                .await?;
+    // MAZE_CELLテーブルの内容を全件取得する。
+    let maze_cells = crate::database::entities::maze_cell::Entity::find()
+        .all(txn)
+        .await?;
+    for cell in maze_cells {
+        let id = cell.id;
+        let x = cell.x as u64;
+        let y = cell.y as u64;
+        let new_cell_type: String;
+        if x % 2 == 0 && y % 2 == 0 {
+            new_cell_type = PILLAR.to_string();
+        } else if x == 0 || x == x_max - 1 || y == 0 || y == y_max - 1 {
+            new_cell_type = WALL.to_string();
+        } else {
+            new_cell_type = PATH.to_string();
         }
+        let new_field = crate::database::entities::maze_field::ActiveModel {
+            id: sea_orm::ActiveValue::Set(id),
+            cell_type: sea_orm::ActiveValue::Set(new_cell_type),
+            cell_owner_thread_id: sea_orm::ActiveValue::Set(None),
+        };
+        crate::database::entities::maze_field::Entity::insert(new_field)
+            .exec(txn)
+            .await?;
     }
 
     Ok(())
@@ -119,7 +124,7 @@ pub async fn initialize_db(
 
     // First, delete child tables that reference parent tables (foreign key constraints)
     erase_maze_field(&txn).await?;
-    erase_therad_list(&txn).await?;
+    erase_thread_list(&txn).await?;
 
     // Then delete and recreate parent tables
     erase_maze_cell_type(&txn).await?;

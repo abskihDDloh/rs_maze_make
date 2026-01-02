@@ -3,6 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use chrono::NaiveDateTime;
 use rand::Rng;
 use sea_orm::prelude::DateTimeUtc;
 
@@ -39,10 +40,12 @@ impl MazeThreadIdentifier {
     pub fn unix_time(&self) -> i64 {
         self.unix_time
     }
-    pub fn unix_time_as_date_time_utc(&self) -> Option<DateTimeUtc> {
+    pub fn unix_time_as_date_time_utc(&self) -> Result<DateTimeUtc, Box<dyn std::error::Error>> {
         let secs = self.unix_time / 1_000;
         let millis = (self.unix_time % 1_000).abs();
-        DateTimeUtc::from_timestamp(secs, (millis as u32) * 1_000_000)
+        let dt_utc = DateTimeUtc::from_timestamp_millis(secs * 1_000 + millis);
+        let dt_utc = dt_utc.ok_or("Failed to convert unix_time to DateTimeUtc")?;
+        Ok(dt_utc)
     }
     pub fn same_thread(&self, other: &MazeThreadIdentifier) -> bool {
         self.tid_id == other.tid_id
@@ -109,7 +112,7 @@ mod tests {
 
         let dt = identifier
             .unix_time_as_date_time_utc()
-            .expect("should convert millis to DateTimeUtc");
+            .expect("failed to convert to datetime");
 
         // DateTimeUtc::timestamp は秒精度。ミリ秒が下3桁として含まれていることを確認。
         let millis_component = (identifier.unix_time() % 1_000) as u32;

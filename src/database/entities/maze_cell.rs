@@ -5,9 +5,11 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "MAZE_CELL")]
 pub struct Model {
-    #[sea_orm(column_name = "X", primary_key, auto_increment = false)]
+    #[sea_orm(column_name = "ID", primary_key)]
+    pub id: u64,
+    #[sea_orm(column_name = "X")]
     pub x: u64,
-    #[sea_orm(column_name = "Y", primary_key, auto_increment = false)]
+    #[sea_orm(column_name = "Y")]
     pub y: u64,
 }
 
@@ -15,8 +17,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_one = "super::maze_field::Entity")]
     MazeField,
-    #[sea_orm(has_many = "super::therad_list::Entity")]
-    TheradList,
+    #[sea_orm(has_one = "super::thread_list::Entity")]
+    ThreadList,
 }
 
 impl Related<super::maze_field::Entity> for Entity {
@@ -25,9 +27,9 @@ impl Related<super::maze_field::Entity> for Entity {
     }
 }
 
-impl Related<super::therad_list::Entity> for Entity {
+impl Related<super::thread_list::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::TheradList.def()
+        Relation::ThreadList.def()
     }
 }
 

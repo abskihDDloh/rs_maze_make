@@ -23,9 +23,7 @@ pub(in crate::maze) async fn select_random_start_point_from_db(
     let x = selected_point.x;
     let y = selected_point.y;
     let tid_str = tid.as_str();
-    let unix_time = tid
-        .unix_time_as_date_time_utc()
-        .ok_or("Failed to convert unix_time to DateTimeUtc")?;
+    let unix_time = tid.unix_time_as_date_time_utc()?;
     // 選択したスタートポイントとMazeThreadIdentifierの内容をADD_NEW_THREADプロシージャを使ってTHERAD_LISTテーブルとMAZE_FIELDテーブルに登録する。
     let sql = "CALL ADD_NEW_THREAD(?, ?, ?, ?)";
     txn.execute(Statement::from_sql_and_values(

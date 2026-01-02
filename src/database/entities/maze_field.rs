@@ -5,10 +5,8 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "MAZE_FIELD")]
 pub struct Model {
-    #[sea_orm(column_name = "X", primary_key, auto_increment = false)]
-    pub x: u64,
-    #[sea_orm(column_name = "Y", primary_key, auto_increment = false)]
-    pub y: u64,
+    #[sea_orm(column_name = "ID", primary_key, auto_increment = false)]
+    pub id: u64,
     #[sea_orm(column_name = "CELL_TYPE")]
     pub cell_type: String,
     #[sea_orm(column_name = "CELL_OWNER_THREAD_ID")]
@@ -19,8 +17,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::maze_cell::Entity",
-        from = "(Column::X, Column::Y)",
-        to = "(super::maze_cell::Column::X, super::maze_cell::Column::Y)",
+        from = "Column::Id",
+        to = "super::maze_cell::Column::Id",
         on_update = "Restrict",
         on_delete = "Restrict"
     )]
@@ -34,13 +32,13 @@ pub enum Relation {
     )]
     MazeCellType,
     #[sea_orm(
-        belongs_to = "super::therad_list::Entity",
+        belongs_to = "super::thread_list::Entity",
         from = "Column::CellOwnerThreadId",
-        to = "super::therad_list::Column::Id",
+        to = "super::thread_list::Column::Id",
         on_update = "Restrict",
         on_delete = "Restrict"
     )]
-    TheradList,
+    ThreadList,
 }
 
 impl Related<super::maze_cell::Entity> for Entity {
@@ -55,12 +53,9 @@ impl Related<super::maze_cell_type::Entity> for Entity {
     }
 }
 
-impl Related<super::therad_list::Entity> for Entity {
+impl Related<super::thread_list::Entity> for Entity {
     fn to() -> RelationDef {
-        super::maze_cell::Relation::TheradList.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::maze_cell::Relation::MazeField.def().rev())
+        Relation::ThreadList.def()
     }
 }
 
