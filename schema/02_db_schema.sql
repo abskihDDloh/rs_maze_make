@@ -109,7 +109,7 @@ CREATE TABLE `THERAD_LIST` (
   UNIQUE KEY `UNIQUE_ALL_COLUMN` (`ID`,`THREAD_ID`,`CREATE_UNIXTIME`,`START_X`,`START_Y`) USING BTREE,
   UNIQUE KEY `UNIQUE_START_POINT` (`START_X`,`START_Y`),
   CONSTRAINT `FK_THREAD_START_POINT` FOREIGN KEY (`START_X`, `START_Y`) REFERENCES `MAZE_CELL` (`X`, `Y`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
@@ -191,6 +191,66 @@ SET character_set_client = @saved_cs_client;
 --
 -- Dumping routines for database 'MAZEMAKE'
 --
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `ADD_NEW_THREAD` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
+DELIMITER ;;
+CREATE DEFINER=`mazemake_u`@`localhost` PROCEDURE `ADD_NEW_THREAD`(IN `p_x` BIGINT UNSIGNED, IN `p_y` BIGINT UNSIGNED, IN `p_thread_id` VARCHAR(80), IN `p_create_unixtime` TIMESTAMP)
+    SQL SECURITY INVOKER
+BEGIN
+    DECLARE v_id BIGINT UNSIGNED;
+    DECLARE v_start_x BIGINT UNSIGNED;
+    DECLARE v_start_y BIGINT UNSIGNED;
+    
+    -- エラーハンドラー（SQLエラーで終了）
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error occurred in ADD_NEW_THREAD procedure';
+    END;
+    
+    START TRANSACTION;
+    
+    -- THERAD_LISTにINSERT
+    INSERT INTO THERAD_LIST (THREAD_ID, CREATE_UNIXTIME, START_X, START_Y) 
+    VALUES (p_thread_id, p_create_unixtime, p_x, p_y);
+    
+    -- INSERTした行のID, START_X, START_Yを取得（1行だけ想定）
+    SELECT ID, START_X, START_Y INTO v_id, v_start_x, v_start_y
+    FROM THERAD_LIST
+    WHERE THREAD_ID = p_thread_id AND CREATE_UNIXTIME = p_create_unixtime
+    LIMIT 1;
+    
+    -- 1行だけ取得できたか確認、そうでなければエラー
+    IF ROW_COUNT() <> 1 THEN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Failed to retrieve inserted row from THERAD_LIST';
+    END IF;
+    
+    -- MAZE_FIELDをUPDATE
+    UPDATE MAZE_FIELD 
+    SET CELL_OWNER_THREAD_ID = v_id 
+    WHERE X = v_start_x AND Y = v_start_y;
+    
+    -- UPDATEが失敗したらエラー
+    IF ROW_COUNT() = 0 THEN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Failed to update MAZE_FIELD';
+    END IF;
+    
+    COMMIT;
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 
 --
 -- Final view structure for view `OUTSIDE_WALL_START_POINTS_VIEW`
@@ -291,4 +351,4 @@ SET character_set_client = @saved_cs_client;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-02 16:13:43
+-- Dump completed on 2026-01-02 16:58:11
