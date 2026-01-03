@@ -27,14 +27,16 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     MazeCell,
+    #[sea_orm(has_many = "super::maze_field::Entity")]
+    MazeField,
     #[sea_orm(
         belongs_to = "super::outside_wall_connect_type::Entity",
         from = "Column::OutsideWallConnectType",
-        to = "super::outside_wall_connect_type::Column::Type"
+        to = "super::outside_wall_connect_type::Column::Type",
+        on_update = "Restrict",
+        on_delete = "Restrict"
     )]
     OutsideWallConnectType,
-    #[sea_orm(has_many = "super::maze_field::Entity")]
-    MazeField,
 }
 
 impl Related<super::maze_cell::Entity> for Entity {
@@ -43,15 +45,15 @@ impl Related<super::maze_cell::Entity> for Entity {
     }
 }
 
-impl Related<super::outside_wall_connect_type::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::OutsideWallConnectType.def()
-    }
-}
-
 impl Related<super::maze_field::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::MazeField.def()
+    }
+}
+
+impl Related<super::outside_wall_connect_type::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OutsideWallConnectType.def()
     }
 }
 

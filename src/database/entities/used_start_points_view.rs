@@ -17,6 +17,8 @@ pub struct Model {
     pub thread_id: String,
     #[sea_orm(column_name = "CREATE_UNIXTIME")]
     pub create_unixtime: i64,
+    #[sea_orm(column_name = "OUTSIDE_WALL_CONNECT_TYPE")]
+    pub outside_wall_connect_type: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

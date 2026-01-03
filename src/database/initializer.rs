@@ -14,6 +14,14 @@ async fn erase_thread_list(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbE
 
     Ok(())
 }
+
+async fn erase_outside_wall_connect_type(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
+    crate::database::entities::outside_wall_connect_type::Entity::delete_many()
+        .exec(txn)
+        .await?;
+    Ok(())
+}
+
 async fn erase_maze_cell(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
     crate::database::entities::maze_cell::Entity::delete_many()
         .exec(txn)
@@ -24,6 +32,26 @@ async fn erase_maze_cell_type(txn: &DatabaseTransaction) -> Result<(), sea_orm::
     crate::database::entities::maze_cell_type::Entity::delete_many()
         .exec(txn)
         .await?;
+    Ok(())
+}
+
+pub const DIRECT_CONNECT: &str = "DIRECT_CONNECT";
+pub const INDIRECT_CONNECT: &str = "INDIRECT_CONNECT";
+pub const NOT_CONNECT: &str = "NOT_CONNECT";
+
+async fn initialize_outside_wall_connect_type(
+    txn: &DatabaseTransaction,
+) -> Result<(), sea_orm::DbErr> {
+    let connect_types = vec![DIRECT_CONNECT, INDIRECT_CONNECT, NOT_CONNECT];
+
+    for connect_type in connect_types {
+        let new_connect_type = crate::database::entities::outside_wall_connect_type::ActiveModel {
+            r#type: sea_orm::ActiveValue::Set(connect_type.to_string()),
+        };
+        crate::database::entities::outside_wall_connect_type::Entity::insert(new_connect_type)
+            .exec(txn)
+            .await?;
+    }
     Ok(())
 }
 
@@ -129,8 +157,10 @@ pub async fn initialize_db(
     // Then delete and recreate parent tables
     erase_maze_cell_type(&txn).await?;
     erase_maze_cell(&txn).await?;
+    erase_outside_wall_connect_type(&txn).await?;
 
     // Now recreate the data
+    initialize_outside_wall_connect_type(&txn).await?;
     initialize_maze_cell_type(&txn).await?;
     initialize_maze_cell(&txn, x_max, y_max).await?;
     initialize_maze_field(&txn, x_max, y_max).await?;
@@ -316,10 +346,9 @@ mod tests {
         eprintln!("Database initialized successfully");
 
         // Verify data was inserted correctly
-        use sea_orm::EntityTrait;
 
         eprintln!("Verifying maze_cell count...");
-        let cell_count: u64 = crate::database::entities::maze_cell::Entity::find()
+        let cell_count = crate::database::entities::maze_cell::Entity::find()
             .count(&db)
             .await
             .expect("Failed to count maze cells");
@@ -332,7 +361,7 @@ mod tests {
         );
 
         eprintln!("Verifying maze_field count...");
-        let field_count: u64 = crate::database::entities::maze_field::Entity::find()
+        let field_count = crate::database::entities::maze_field::Entity::find()
             .count(&db)
             .await
             .expect("Failed to count maze fields");

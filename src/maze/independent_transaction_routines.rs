@@ -1,7 +1,14 @@
+use log::debug;
 use rand::Rng;
-use sea_orm::{ConnectionTrait, DbConn, EntityTrait, PaginatorTrait, Statement, TransactionTrait};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DbConn, EntityTrait, PaginatorTrait, QueryFilter, Statement,
+    TransactionTrait,
+};
 
-use crate::maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier};
+use crate::{
+    database::initializer::NOT_CONNECT,
+    maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier},
+};
 
 pub async fn check_extendable_pillar_existance(
     db: &sea_orm::DbConn,
@@ -10,7 +17,45 @@ pub async fn check_extendable_pillar_existance(
     let unused_count: u64 = crate::database::entities::unused_start_points_view::Entity::find()
         .count(db)
         .await?;
+    debug!("Unused start points count: {}", unused_count);
     Ok(unused_count > 0)
+}
+
+/// THREAD_LISTにおけるOUTSIDE_WALL_CONNECT_TYPE='NOT_CONNECT'のレコード数が0であればfalse、そうでない場合はtrueを返す。
+/// これは、外壁接続タイプが「接続しない」のスレッドが存在するかどうかを確認するために使用される。
+pub async fn check_not_connect_outside_wall_thread_existance(
+    db: &sea_orm::DbConn,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let not_connect_count: u64 = crate::database::entities::thread_list::Entity::find()
+        .filter(
+            crate::database::entities::thread_list::Column::OutsideWallConnectType.eq(NOT_CONNECT),
+        )
+        .count(db)
+        .await?;
+    debug!(
+        "Threads with OUTSIDE_WALL_CONNECT_TYPE='NOT_CONNECT' count: {}",
+        not_connect_count
+    );
+    Ok(not_connect_count > 0)
+}
+
+// THREAD_LISTテーブルか自分のスレッドIDに対応するレコードを持ってくる。
+pub async fn select_my_thread_record_from_db(
+    db: &DbConn,
+    tid: &MazeThreadIdentifier,
+) -> Result<crate::database::entities::thread_list::Model, Box<dyn std::error::Error>> {
+    let thread_record: crate::database::entities::thread_list::Model =
+        crate::database::entities::thread_list::Entity::find()
+            .filter(
+                crate::database::entities::thread_list::Column::ThreadId.eq(tid.thread_id_as_str()),
+            )
+            .filter(
+                crate::database::entities::thread_list::Column::CreateUnixtime.eq(tid.unix_time()),
+            )
+            .one(db)
+            .await?
+            .ok_or("Thread record not found")?;
+    Ok(thread_record)
 }
 
 pub async fn select_random_start_point_from_db(
@@ -53,9 +98,12 @@ pub async fn select_random_start_point_from_db(
 
 #[cfg(test)]
 mod tests {
+    use log::info;
+
     use super::*;
 
     #[tokio::test]
+    #[test_log::test]
     #[ignore] // DATABASE_URL が必要なため
     async fn test_select_random_start_point_five_times() {
         // DB接続を確立
@@ -86,6 +134,17 @@ mod tests {
                     panic!("Call {}: Failed to select start point: {}", i + 1, e);
                 }
             }
+            let thread_record = select_my_thread_record_from_db(&db, &tid)
+                .await
+                .expect("Failed to retrieve thread record after selecting start point");
+            info!(
+                "Retrieved thread record: ID={}, THREAD_ID={}, CREATE_UNIXTIME={}, START_CELL={}, OUTSIDE_WALL_CONNECT_TYPE={}",
+                thread_record.id,
+                thread_record.thread_id,
+                thread_record.create_unixtime,
+                thread_record.start_cell,
+                thread_record.outside_wall_connect_type
+            );
         }
 
         // 検証：5個のポイントがすべて正常に取得できたこと
@@ -108,9 +167,18 @@ mod tests {
             "There should not be extendable pillars available"
         );
 
-        eprintln!(
+        info!(
             "Successfully selected {} start points without errors",
             selected_points.len()
+        );
+
+        // check_not_connect_outside_wall_thread_existanceの結果はfalseの想定(このテストコードだと2.2がNOT_CONNTCTのままになるはず)。
+        let res = check_not_connect_outside_wall_thread_existance(&db).await;
+        assert!(res.is_ok());
+        let has_not_connect = res.unwrap();
+        assert!(
+            has_not_connect,
+            "There should not be threads with OUTSIDE_WALL_CONNECT_TYPE='NOT_CONNECT'"
         );
     }
 }

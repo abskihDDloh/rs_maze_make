@@ -1,44 +1,17 @@
-use log::{Level, info, log_enabled, warn};
+use log::{Level, debug, info, log_enabled, warn};
 use rand::Rng;
-use sea_orm::{ConnectionTrait, DatabaseTransaction, EntityTrait};
+use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter};
 
+use crate::database::initializer::{DIRECT_CONNECT, NOT_CONNECT, PATH};
 use crate::maze::maze_point::select_between_points_without_edge;
 
 use crate::maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct NewMethodEnforcer {}
-
-impl NewMethodEnforcer {
-    fn new() -> Self {
-        NewMethodEnforcer {}
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum UpdatePathResult {
-    MOVE_NEXT(MazePoint, NewMethodEnforcer),
-    CONNECT_OUTSIDE_AND_EXIT(MazePoint, NewMethodEnforcer),
-}
-impl UpdatePathResult {
-    fn move_next(pillar: MazePoint) -> Self {
-        UpdatePathResult::MOVE_NEXT(pillar, NewMethodEnforcer::new())
-    }
-    fn connect_outside_and_exit(pillar: MazePoint) -> Self {
-        UpdatePathResult::CONNECT_OUTSIDE_AND_EXIT(pillar, NewMethodEnforcer::new())
-    }
-    pub fn get_pillar(&self) -> MazePoint {
-        match self {
-            UpdatePathResult::MOVE_NEXT(pillar, _enforcer) => *pillar,
-            UpdatePathResult::CONNECT_OUTSIDE_AND_EXIT(pillar, _enforcer) => *pillar,
-        }
-    }
-}
 macro_rules! debug_get_adjacent_extendable_pillar {
-    ($tid:expr, $current_pillar:expr, $adjacent_pillars:expr) => {
+    ($tid:expr, $current_pillar:expr, $unused_points:expr) => {
         format!(
-            "[tid: {:?}, current_pillar: {:?}, adjacent_pillars: {:?}]",
-            $tid, $current_pillar, $adjacent_pillars
+            "[tid: {:?}, current_pillar: {:?}, unused_points: {:?}]",
+            $tid, $current_pillar, $unused_points
         )
     };
 }
@@ -46,94 +19,172 @@ pub async fn get_adjacent_extendable_pillar(
     txn: &DatabaseTransaction,
     tid: &MazeThreadIdentifier,
     current_pillar: &MazePoint,
-) -> Result<UpdatePathResult, Box<dyn std::error::Error>> {
-    let mut adjacent_pillars = current_pillar.generate_adjacent_maze_points(2);
+) -> Result<MazePoint, Box<dyn std::error::Error>> {
+    // THREAD_LISTから、MazeThreadIdentifierの内容(THREAD_ID,CREATE_UNIXTIME)に当てはまるレコードを取得する。ない場合はエラー。
+    let thread_record = crate::database::entities::thread_list::Entity::find()
+        .filter(
+            crate::database::entities::thread_list::Column::ThreadId
+                .eq(tid.thread_id_as_str())
+                .and(crate::database::entities::thread_list::Column::CreateUnixtime.eq(tid.unix_time())),
+        )
+        .one(txn)
+        .await?
+        .ok_or("Thread record not found.")?;
 
-    // MAZE_CELL_MIN_MAX_VIEWの内容を取得する。
-    let cell_min_max_records: Vec<crate::database::entities::maze_cell_min_max_view::Model> =
-        crate::database::entities::maze_cell_min_max_view::Entity::find()
+    //THREAD_FROM_OUTSIDE_WALL_VIEWから、MazeThreadIdentifierの内容に当てはまるレコードを取得する。
+    let thread_from_outside_wall_view_records: Vec<
+        crate::database::entities::thread_from_outside_wall_view::Model,
+    > = crate::database::entities::thread_from_outside_wall_view::Entity::find()
+        .filter(
+            crate::database::entities::thread_from_outside_wall_view::Column::Tid
+                .eq(thread_record.id)
+        )
+        .all(txn)
+        .await?;
+
+    let adjacent_pillars = current_pillar.generate_adjacent_maze_points(2);
+
+    //UNUSED_START_POINTS_VIEWから、adjacent_pillarsの内容に(X AND Y)が当てはまるレコードをすべて取得する。
+    let mut unused_points: Vec<crate::database::entities::unused_start_points_view::Model> =
+        crate::database::entities::unused_start_points_view::Entity::find()
+            .filter(
+                crate::database::entities::unused_start_points_view::Column::X
+                    .is_in(adjacent_pillars.iter().map(|p| p.x()).collect::<Vec<u64>>())
+                    .and(
+                        crate::database::entities::unused_start_points_view::Column::Y
+                            .is_in(adjacent_pillars.iter().map(|p| p.y()).collect::<Vec<u64>>()),
+                    ),
+            )
             .all(txn)
             .await?;
-    if cell_min_max_records.is_empty() {
-        return Err("MAZE_CELL_MIN_MAX_VIEW is empty.".into());
-    }
-    let max_x = cell_min_max_records[0].max_x as u64;
-    let max_y = cell_min_max_records[0].max_y as u64;
-
     loop {
-        if adjacent_pillars.is_empty() {
+        if unused_points.is_empty() {
             return Err("No extendable adjacent pillars available.".into());
         }
-        if log_enabled!(Level::Debug) {
-            info!(
-                "{}",
-                debug_get_adjacent_extendable_pillar!(tid, current_pillar, adjacent_pillars)
-            );
-        }
-        //adjacent_pillarsの中からランダムで1個選択する。
+        debug!(
+            "{}",
+            debug_get_adjacent_extendable_pillar!(tid, current_pillar, unused_points)
+        );
+        //unused_pointsの中からランダムで1個選択する。
         let mut rng = rand::rng();
-        let random_index = rng.random_range(0..adjacent_pillars.len());
-        let mut selected_pillar: MazePoint = adjacent_pillars[random_index];
+        let random_index = rng.random_range(0..unused_points.len());
+        let mut selected_point = unused_points[random_index].clone();
         //選択した要素は取り除く。
-        adjacent_pillars.remove(random_index);
-        if log_enabled!(Level::Debug) {
-            info!(
-                "{} Removed_pillar: {:?}",
-                debug_get_adjacent_extendable_pillar!(tid, current_pillar, adjacent_pillars),
-                selected_pillar
-            );
-        }
-        //選択した要素がMAZE_FIELDの範囲外であれば、continueする。
-        if selected_pillar.x() > max_x || selected_pillar.y() > max_y {
-            if log_enabled!(Level::Debug) {
-                info!(
-                    "{} Removed_pillar: {:?} Overflowed maze field range. max_x={}, max_y={}",
-                    debug_get_adjacent_extendable_pillar!(tid, current_pillar, adjacent_pillars),
-                    selected_pillar,
-                    max_x,
-                    max_y
-                );
-            }
-            continue;
-        }
-        //GET_START_POINTプロシージャを使用して、選択した要素を取得する。
-        let sql = "CALL GET_START_POINT(?, ? , ? , ?)";
-        let rows_result = txn
-            .query_all(sea_orm::Statement::from_sql_and_values(
-                sea_orm::DbBackend::MySql,
-                sql,
-                vec![
-                    selected_pillar.x().into(),
-                    selected_pillar.y().into(),
-                    tid.thread_id_as_str().into(),
-                    tid.unix_time().into(),
-                ],
-            ))
-            .await;
+        unused_points.remove(random_index);
 
-        // エラーの場合は次の候補を試す
-        let rows = match rows_result {
-            Ok(r) => r,
-            Err(e) => {
-                warn!(
-                    "GET_START_POINT procedure error for pillar ({}, {}): {:?}",
-                    selected_pillar.x(),
-                    selected_pillar.y(),
-                    e
+        debug!(
+            "{} Removed_pillar: {:?}",
+            debug_get_adjacent_extendable_pillar!(tid, current_pillar, unused_points),
+            selected_point
+        );
+
+        // OUTSIDE_WALL_START_POINTS_VIEWに、選択した要素の(X AND Y)が当てはまるレコードが存在するか確認する。
+        let outside_wall_start_points: Vec<
+            crate::database::entities::outside_wall_start_points_view::Model,
+        > = crate::database::entities::outside_wall_start_points_view::Entity::find()
+            .filter(
+                crate::database::entities::outside_wall_start_points_view::Column::X
+                    .eq(selected_point.x)
+                    .and(
+                        crate::database::entities::outside_wall_start_points_view::Column::Y
+                            .eq(selected_point.y),
+                    ),
+            )
+            .all(txn)
+            .await?;
+
+        if !thread_from_outside_wall_view_records.is_empty() {
+            // 外壁から来た壁は外壁にはゆかないようにする。
+            if !outside_wall_start_points.is_empty() {
+                info!(
+                    "{} Selected pillar is outside wall start point, skipping: {:?}",
+                    debug_get_adjacent_extendable_pillar!(tid, current_pillar, unused_points),
+                    selected_point
                 );
-                continue;
-            } // プロシージャがエラーを返した場合は次の候補へ
-        };
-        //RESULT_STATUS=UPDATEDの場合は、選択した要素を返す。
-        if !rows.is_empty() {
-            // インデックス0でRESULT_STATUSカラムを取得
-            let result_status: String = rows[0].try_get_by_index(0)?;
-            if result_status == "UPDATED" {
-                return Ok(UpdatePathResult::move_next(selected_pillar));
-            } else if result_status == "NOT_UPDATED" {
-                return Ok(UpdatePathResult::connect_outside_and_exit(selected_pillar));
+                continue; // 次の候補へ
             }
         }
+
+        //outside_wall_start_pointsが空でない場合は、THREAD_LISTのOUTSIDE_WALL_CONNECT_TYPEがNOT_CONNECTである場合に限り、tidの内容に当てはまるレコードのOUTSIDE_WALL_CONNECT_TYPEをDIRECT_CONNECTに更新する。
+        if !outside_wall_start_points.is_empty()
+            && thread_record.outside_wall_connect_type == NOT_CONNECT
+        {
+            let update_model = crate::database::entities::thread_list::ActiveModel {
+                id: sea_orm::ActiveValue::Set(thread_record.id),
+                outside_wall_connect_type: sea_orm::ActiveValue::Set(DIRECT_CONNECT.to_string()),
+                ..Default::default()
+            };
+            crate::database::entities::thread_list::Entity::update(update_model)
+                .exec(txn)
+                .await?;
+        }
+
+        // 選択した要素ともとの要素の間にあるセルを計算する。
+        let selected_maze_point = MazePoint::new(selected_point.x, selected_point.y);
+        let bitween_cell = select_between_points_without_edge(current_pillar, &selected_maze_point);
+        if bitween_cell.len() != 1 {
+            warn!(
+                "Invalid number of between cells: current_pillar=({},{}) selected_point=({},{}) between_cells={:?}",
+                current_pillar.x(),
+                current_pillar.y(),
+                selected_maze_point.x(),
+                selected_maze_point.y(),
+                bitween_cell
+            );
+            continue; // 次の候補へ
+        }
+        let adjacent_cells_candidate = bitween_cell[0];
+
+        // MAZE_CELL_STATUS_VIEWから、adjacent_cells_candidateの内容に(X AND Y)が当てはまるレコードを取得する。
+        let adjacent_cells_status: Vec<crate::database::entities::maze_cell_status_view::Model> =
+            crate::database::entities::maze_cell_status_view::Entity::find()
+                .filter(
+                    crate::database::entities::maze_cell_status_view::Column::X
+                        .eq(adjacent_cells_candidate.x() as u64)
+                        .and(
+                            crate::database::entities::maze_cell_status_view::Column::Y
+                                .eq(adjacent_cells_candidate.y() as u64),
+                        ),
+                )
+                .all(txn)
+                .await?;
+        // 取得したレコードが未利用のPATHでなければ次の候補へ
+        if adjacent_cells_status.is_empty()
+            || adjacent_cells_status[0].cell_type != PATH
+            || adjacent_cells_status[0].cell_owner_thread_id.is_some()
+        {
+            warn!(
+                "Adjacent cell is not PATH: current_pillar=({},{}) selected_point=({},{}) adjacent_cell=({},{}) status={:?}",
+                current_pillar.x(),
+                current_pillar.y(),
+                selected_maze_point.x(),
+                selected_maze_point.y(),
+                adjacent_cells_candidate.x(),
+                adjacent_cells_candidate.y(),
+                adjacent_cells_status
+            );
+            continue; // 次の候補へ
+        }
+        // selected_point.cell_id に当てはまるMAZE_FIELDのCELL_OWNER_THREAD_IDがNullの場合にかぎり、ELL_OWNER_THREAD_IDをthread_record.idに更新する。
+        // エラーの場合は諦める。
+        let maze_field_record = crate::database::entities::maze_field::Entity::find()
+            .filter(crate::database::entities::maze_field::Column::Id.eq(selected_point.cell_id))
+            .one(txn)
+            .await?;
+        if let Some(mut maze_field) = maze_field_record
+            && maze_field.cell_owner_thread_id.is_none()
+        {
+            maze_field.cell_owner_thread_id = Some(thread_record.id);
+            let update_model = crate::database::entities::maze_field::ActiveModel {
+                id: sea_orm::ActiveValue::Set(maze_field.id),
+                cell_owner_thread_id: sea_orm::ActiveValue::Set(maze_field.cell_owner_thread_id),
+                ..Default::default()
+            };
+            crate::database::entities::maze_field::Entity::update(update_model)
+                .exec(txn)
+                .await?;
+        }
+        return Ok(selected_maze_point);
     }
 }
 
@@ -184,6 +235,7 @@ mod tests {
     };
 
     #[tokio::test]
+    #[test_log::test]
     #[ignore] // DATABASE_URL が必要なため
     async fn test_get_adjacent_extendable_pillar_with_used_start_points_view_check() {
         // DB接続
@@ -230,8 +282,12 @@ mod tests {
 
         // USED_START_POINTS_VIEWに(2,2)のレコードがあるか確認
         let selected_pillar = match result.unwrap() {
-            UpdatePathResult::MOVE_NEXT(pillar, _enforcer) => pillar,
-            UpdatePathResult::CONNECT_OUTSIDE_AND_EXIT(pillar, _enforcer) => pillar,
+            p if p.x() == 2 && p.y() == 2 => p,
+            p => panic!(
+                "Expected selected pillar to be (2,2), got ({},{})",
+                p.x(),
+                p.y()
+            ),
         };
         let used_points: Vec<used_start_points_view::Model> =
             entities::used_start_points_view::Entity::find()
