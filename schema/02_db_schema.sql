@@ -30,7 +30,7 @@ CREATE TABLE `MAZE_CELL` (
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_CELL` (`X`,`Y`) USING BTREE,
   UNIQUE KEY `UNIQUE_ALL` (`ID`,`X`,`Y`)
-) ENGINE=InnoDB AUTO_INCREMENT=428 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=578 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -129,7 +129,7 @@ CREATE TABLE `THREAD_LIST` (
   UNIQUE KEY `UNIQUE_ALL_COLUMN` (`ID`,`THREAD_ID`,`CREATE_UNIXTIME`) USING BTREE,
   UNIQUE KEY `UNIQUE_START_CELL` (`START_CELL`),
   CONSTRAINT `FK_START_CELL` FOREIGN KEY (`START_CELL`) REFERENCES `MAZE_CELL` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=49 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=57 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -289,6 +289,8 @@ BEGIN
     DECLARE v_thread_row_id BIGINT UNSIGNED;
     DECLARE v_owner BIGINT UNSIGNED;
     DECLARE v_field_type VARCHAR(255);
+    DECLARE v_outside_wall_owner BIGINT UNSIGNED DEFAULT NULL;
+    DECLARE v_result_status VARCHAR(20);
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
@@ -297,16 +299,27 @@ BEGIN
 
     START TRANSACTION;
 
-    -- 1. UNUSED_START_POINTS_VIEW から開始セル取得（PILLAR 前提）
+    -- 1. UNUSED_START_POINTS_VIEW または USED_OUTSIDE_WALL_START_POINTS_VIEW から開始セル取得
+    -- まずUNUSED_START_POINTS_VIEWから取得を試みる
     SELECT CELL_ID, CELL_TYPE
       INTO v_start_cell_id, v_cell_type
       FROM UNUSED_START_POINTS_VIEW
      WHERE X = p_x AND Y = p_y
      LIMIT 1;
 
-    IF v_start_cell_id IS NULL OR v_cell_type <> 'PILLAR' THEN
+    -- レコードがない場合はUSED_OUTSIDE_WALL_START_POINTS_VIEWから取得
+    IF v_start_cell_id IS NULL THEN
+        SELECT CELL_ID, CELL_TYPE, CELL_OWNER_THREAD_ID
+          INTO v_start_cell_id, v_cell_type, v_outside_wall_owner
+          FROM USED_OUTSIDE_WALL_START_POINTS_VIEW
+         WHERE X = p_x AND Y = p_y
+           AND (THREAD_ID <> p_thread_id OR CREATE_UNIXTIME <> p_create_unixtime)
+         LIMIT 1;
+    END IF;
+
+    IF v_start_cell_id IS NULL THEN
         SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'START_CELL not found or not PILLAR';
+            SET MESSAGE_TEXT = 'START_CELL not found';
     END IF;
 
     -- 2. THREAD_LIST からスレッド行取得
@@ -329,29 +342,38 @@ BEGIN
      WHERE ID = v_start_cell_id
      FOR UPDATE;
 
-    IF v_owner IS NOT NULL THEN
+    IF v_owner IS NOT NULL AND (v_outside_wall_owner IS NULL OR v_owner <> v_outside_wall_owner) THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'CELL_OWNER_THREAD_ID already set';
     END IF;
 
-    IF v_field_type <> 'PILLAR' THEN
+    IF v_field_type <> v_cell_type THEN
         SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'CELL_TYPE is not PILLAR';
+            SET MESSAGE_TEXT = 'CELL_TYPE mismatch';
     END IF;
 
     -- 更新: 所有者を設定
-    UPDATE MAZE_FIELD
-       SET CELL_OWNER_THREAD_ID = v_thread_row_id
-     WHERE ID = v_start_cell_id
-       AND CELL_OWNER_THREAD_ID IS NULL
-       AND CELL_TYPE = 'PILLAR';
+    IF v_outside_wall_owner IS NOT NULL THEN
+        -- USED_OUTSIDE_WALL_START_POINTS_VIEWから取得した場合はUPDATEしない
+        SET v_result_status = 'NOT_UPDATED';
+    ELSE
+        -- UNUSED_START_POINTS_VIEWから取得した場合はUPDATEする
+        UPDATE MAZE_FIELD
+           SET CELL_OWNER_THREAD_ID = v_thread_row_id
+         WHERE ID = v_start_cell_id
+           AND CELL_OWNER_THREAD_ID IS NULL;
 
-    IF ROW_COUNT() <> 1 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Update failed or row state changed';
+        IF ROW_COUNT() <> 1 THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Update failed or row state changed';
+        END IF;
+
+        SET v_result_status = 'UPDATED';
     END IF;
 
     COMMIT;
+
+    SELECT v_result_status AS RESULT_STATUS;
 END ;;
 DELIMITER ;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;
@@ -620,4 +642,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-03  1:03:02
+-- Dump completed on 2026-01-03  9:48:03
