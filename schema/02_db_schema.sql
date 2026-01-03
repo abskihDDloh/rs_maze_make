@@ -30,8 +30,23 @@ CREATE TABLE `MAZE_CELL` (
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_CELL` (`X`,`Y`) USING BTREE,
   UNIQUE KEY `UNIQUE_ALL` (`ID`,`X`,`Y`)
-) ENGINE=InnoDB AUTO_INCREMENT=1028 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=1353 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Temporary table structure for view `MAZE_CELL_MIN_MAX_VIEW`
+--
+
+DROP TABLE IF EXISTS `MAZE_CELL_MIN_MAX_VIEW`;
+/*!50001 DROP VIEW IF EXISTS `MAZE_CELL_MIN_MAX_VIEW`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8mb4;
+/*!50001 CREATE VIEW `MAZE_CELL_MIN_MAX_VIEW` AS SELECT
+ 1 AS `max_x`,
+  1 AS `min_x`,
+  1 AS `max_y`,
+  1 AS `min_y` */;
+SET character_set_client = @saved_cs_client;
 
 --
 -- Temporary table structure for view `MAZE_CELL_STATUS_VIEW`
@@ -129,7 +144,7 @@ CREATE TABLE `THREAD_LIST` (
   UNIQUE KEY `UNIQUE_ALL_COLUMN` (`ID`,`THREAD_ID`,`CREATE_UNIXTIME`) USING BTREE,
   UNIQUE KEY `UNIQUE_START_CELL` (`START_CELL`),
   CONSTRAINT `FK_START_CELL` FOREIGN KEY (`START_CELL`) REFERENCES `MAZE_CELL` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=113 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=144 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -540,6 +555,24 @@ DELIMITER ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
 
 --
+-- Final view structure for view `MAZE_CELL_MIN_MAX_VIEW`
+--
+
+/*!50001 DROP VIEW IF EXISTS `MAZE_CELL_MIN_MAX_VIEW`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
+/*!50001 VIEW `MAZE_CELL_MIN_MAX_VIEW` AS select max(`MAZE_CELL`.`X`) AS `max_x`,min(`MAZE_CELL`.`X`) AS `min_x`,max(`MAZE_CELL`.`Y`) AS `max_y`,min(`MAZE_CELL`.`Y`) AS `min_y` from `MAZE_CELL` */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
 -- Final view structure for view `MAZE_CELL_STATUS_VIEW`
 --
 
@@ -588,7 +621,7 @@ DELIMITER ;
 /*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
-/*!50001 VIEW `START_POINTS_VIEW` AS select `mc`.`CELL_ID` AS `CELL_ID`,`mc`.`X` AS `X`,`mc`.`Y` AS `Y`,`mc`.`CELL_TYPE` AS `CELL_TYPE` from (`MAZE_CELL_STATUS_VIEW` `mc` join (select max(`MAZE_CELL`.`X`) AS `max_x`,min(`MAZE_CELL`.`X`) AS `min_x`,max(`MAZE_CELL`.`Y`) AS `max_y`,min(`MAZE_CELL`.`Y`) AS `min_y` from `MAZE_CELL`) `b`) where `mc`.`X` MOD 2 = 0 and `mc`.`Y` MOD 2 = 0 and (`mc`.`X` <> `b`.`max_x` or `mc`.`Y` <> `b`.`max_y`) and (`mc`.`X` <> `b`.`min_x` or `mc`.`Y` <> `b`.`min_y`) and (`mc`.`X` <> `b`.`max_x` or `mc`.`Y` <> `b`.`min_y`) and (`mc`.`X` <> `b`.`min_x` or `mc`.`Y` <> `b`.`max_y`) */;
+/*!50001 VIEW `START_POINTS_VIEW` AS select `mc`.`CELL_ID` AS `CELL_ID`,`mc`.`X` AS `X`,`mc`.`Y` AS `Y`,`mc`.`CELL_TYPE` AS `CELL_TYPE` from (`MAZE_CELL_STATUS_VIEW` `mc` join (select `MAZE_CELL_MIN_MAX_VIEW`.`max_x` AS `max_x`,`MAZE_CELL_MIN_MAX_VIEW`.`min_x` AS `min_x`,`MAZE_CELL_MIN_MAX_VIEW`.`max_y` AS `max_y`,`MAZE_CELL_MIN_MAX_VIEW`.`min_y` AS `min_y` from `MAZE_CELL_MIN_MAX_VIEW`) `b`) where `mc`.`X` MOD 2 = 0 and `mc`.`Y` MOD 2 = 0 and (`mc`.`X` <> `b`.`max_x` or `mc`.`Y` <> `b`.`max_y`) and (`mc`.`X` <> `b`.`min_x` or `mc`.`Y` <> `b`.`min_y`) and (`mc`.`X` <> `b`.`max_x` or `mc`.`Y` <> `b`.`min_y`) and (`mc`.`X` <> `b`.`min_x` or `mc`.`Y` <> `b`.`max_y`) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -656,4 +689,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-03 15:07:46
+-- Dump completed on 2026-01-03 16:03:26

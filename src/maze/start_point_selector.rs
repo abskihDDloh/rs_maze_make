@@ -1,9 +1,19 @@
 use rand::Rng;
-use sea_orm::{ConnectionTrait, DbConn, EntityTrait, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DbConn, EntityTrait, PaginatorTrait, Statement, TransactionTrait};
 
 use crate::maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier};
 
-pub(in crate::maze) async fn select_random_start_point_from_db(
+pub async fn check_extendable_pillar_existance(
+    db: &sea_orm::DbConn,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    // UNUSED_START_POINTS_VIEWのレコード数が0であればfalse、そうでない場合はtrueを返す。
+    let unused_count: u64 = crate::database::entities::unused_start_points_view::Entity::find()
+        .count(db)
+        .await?;
+    Ok(unused_count > 0)
+}
+
+pub async fn select_random_start_point_from_db(
     db: &DbConn,
     tid: &MazeThreadIdentifier,
 ) -> Result<MazePoint, Box<dyn std::error::Error>> {
@@ -23,7 +33,7 @@ pub(in crate::maze) async fn select_random_start_point_from_db(
     let x = selected_point.x;
     let y = selected_point.y;
     let tid_str = tid.as_str();
-    let unix_time = tid.unix_time_as_date_time_utc()?;
+    let unix_time = tid.unix_time_as_datetime_formatted_str();
     // 選択したスタートポイントとMazeThreadIdentifierの内容をADD_NEW_THREADプロシージャを使ってTHERAD_LISTテーブルとMAZE_FIELDテーブルに登録する。
     let sql = "CALL ADD_NEW_THREAD(?, ?, ?, ?)";
     txn.execute(Statement::from_sql_and_values(
@@ -33,7 +43,7 @@ pub(in crate::maze) async fn select_random_start_point_from_db(
             x.into(),
             y.into(),
             tid_str.to_string().into(),
-            unix_time.into(),
+            unix_time.unwrap_or_default().into(),
         ],
     ))
     .await?;
@@ -90,6 +100,13 @@ mod tests {
             assert!(point.x() < u64::MAX, "X coordinate should be valid");
             assert!(point.y() < u64::MAX, "Y coordinate should be valid");
         }
+        let res = check_extendable_pillar_existance(&db).await;
+        assert!(res.is_ok());
+        let has_extendable = res.unwrap();
+        assert!(
+            !has_extendable,
+            "There should not be extendable pillars available"
+        );
 
         eprintln!(
             "Successfully selected {} start points without errors",

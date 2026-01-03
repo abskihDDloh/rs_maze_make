@@ -1,5 +1,8 @@
+pub mod maze_point;
 pub mod maze_thread;
 mod maze_thread_identifier;
-pub mod maze_point;
-mod start_point_selector;
 mod move_next;
+mod start_point_selector;
+
+#[cfg(test)]
+mod maze_thread_test;

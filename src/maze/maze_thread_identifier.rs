@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime};
 use rand::Rng;
 use sea_orm::prelude::DateTimeUtc;
 
@@ -40,13 +40,21 @@ impl MazeThreadIdentifier {
     pub fn unix_time(&self) -> i64 {
         self.unix_time
     }
-    pub fn unix_time_as_date_time_utc(&self) -> Result<DateTimeUtc, Box<dyn std::error::Error>> {
+    pub fn unix_time_as_date_time_utc(&self) -> Option<DateTimeUtc> {
         let secs = self.unix_time / 1_000;
-        let millis = (self.unix_time % 1_000).abs();
-        let dt_utc = DateTimeUtc::from_timestamp_millis(secs * 1_000 + millis);
-        let dt_utc = dt_utc.ok_or("Failed to convert unix_time to DateTimeUtc")?;
-        Ok(dt_utc)
+        let millis = (self.unix_time % 1_000).abs() as u32;
+        let nanos: u32 = millis * 1_000_000; // 1ms = 1,000,000ns
+        let dt_utc = DateTime::from_timestamp(secs, nanos);
+        dt_utc
     }
+
+    pub fn unix_time_as_datetime_formatted_str(
+        &self,
+    ) -> Option<String> {
+        let dt_utc = self.unix_time_as_date_time_utc();
+        dt_utc.map(|dt| dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
+    }
+
     pub fn same_thread(&self, other: &MazeThreadIdentifier) -> bool {
         self.tid_id == other.tid_id
     }
