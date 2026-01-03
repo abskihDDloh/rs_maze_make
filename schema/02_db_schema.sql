@@ -203,6 +203,7 @@ BEGIN
     DECLARE v_thread_row_id BIGINT UNSIGNED;
     DECLARE v_owner BIGINT UNSIGNED;
     DECLARE v_rows INT;
+    DECLARE v_message_text VARCHAR(512);
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
@@ -219,8 +220,8 @@ BEGIN
 
     SET v_rows = ROW_COUNT();
     IF v_rows != 1 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'START_CELL not found or not unique';
+        SET v_message_text = CONCAT('START_CELL not found or not unique (X=', p_x, ', Y=', p_y, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     -- THREAD_LIST に挿入
@@ -229,8 +230,8 @@ BEGIN
 
     SET v_rows = ROW_COUNT();
     IF v_rows != 1 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Insert into THERAD_LIST failed';
+        SET v_message_text = CONCAT('Insert into THERAD_LIST failed (THREAD_ID=', p_thread_id, ', CREATE_UNIXTIME=', p_create_unixtime, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     SET v_thread_row_id = LAST_INSERT_ID();
@@ -243,13 +244,13 @@ BEGIN
 
     SET v_rows = ROW_COUNT();
     IF v_rows != 1 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'MAZE_FIELD row not found for the cell';
+        SET v_message_text = CONCAT('MAZE_FIELD row not found for the cell (CELL_ID=', v_start_cell_id, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     IF v_owner IS NOT NULL THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'CELL_OWNER_THREAD_ID is already set';
+        SET v_message_text = CONCAT('CELL_OWNER_THREAD_ID is already set (CELL_ID=', v_start_cell_id, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     -- MAZE_FIELD を更新
@@ -260,8 +261,8 @@ BEGIN
 
     SET v_rows = ROW_COUNT();
     IF v_rows != 1 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Update MAZE_FIELD failed or CELL_OWNER_THREAD_ID already set';
+        SET v_message_text = CONCAT('Update MAZE_FIELD failed or CELL_OWNER_THREAD_ID already set (CELL_ID=', v_start_cell_id, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     COMMIT;
@@ -289,8 +290,9 @@ BEGIN
     DECLARE v_thread_row_id BIGINT UNSIGNED;
     DECLARE v_owner BIGINT UNSIGNED;
     DECLARE v_field_type VARCHAR(255);
-    DECLARE v_outside_wall_owner BIGINT UNSIGNED DEFAULT NULL;
+    DECLARE v_used_cell_owner BIGINT UNSIGNED DEFAULT NULL;
     DECLARE v_result_status VARCHAR(20);
+    DECLARE v_message_text VARCHAR(512);
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
@@ -307,19 +309,32 @@ BEGIN
      WHERE X = p_x AND Y = p_y
      LIMIT 1;
 
-    -- レコードがない場合はUSED_OUTSIDE_WALL_START_POINTS_VIEWから取得
+    -- レコードがない場合はUSED_START_POINTS_VIEWから取得
     IF v_start_cell_id IS NULL THEN
         SELECT CELL_ID, CELL_TYPE, CELL_OWNER_THREAD_ID
-          INTO v_start_cell_id, v_cell_type, v_outside_wall_owner
-          FROM USED_OUTSIDE_WALL_START_POINTS_VIEW
+          INTO v_start_cell_id, v_cell_type, v_used_cell_owner
+          FROM USED_START_POINTS_VIEW
          WHERE X = p_x AND Y = p_y
            AND (THREAD_ID <> p_thread_id OR CREATE_UNIXTIME <> p_create_unixtime)
          LIMIT 1;
     END IF;
 
     IF v_start_cell_id IS NULL THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'START_CELL not found';
+        SET v_message_text = CONCAT('START_CELL not found for X=', p_x, ', Y=', p_y);
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
+    END IF;
+
+-- USED_START_POINTS_VIEWからv_start_cell_idを取得した場合は、USED_OUTSIDE_WALL_START_POINTS_VIEWのCELL_OWNER_THREAD_ID列に、v_used_cell_ownerの値を持つレコードがあるか確認する。ない場合はエラー。
+    IF v_used_cell_owner IS NOT NULL THEN
+        SELECT COUNT(*)
+          INTO v_owner
+          FROM USED_OUTSIDE_WALL_START_POINTS_VIEW
+         WHERE CELL_OWNER_THREAD_ID = v_used_cell_owner;
+
+        IF v_owner = 0 THEN
+            SET v_message_text = CONCAT('USED_START_POINTS_VIEW record not found in USED_OUTSIDE_WALL_START_POINTS_VIEW (CELL_OWNER_THREAD_ID=', v_used_cell_owner, ')');
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
+        END IF;
     END IF;
 
     -- 2. THREAD_LIST からスレッド行取得
@@ -331,8 +346,8 @@ BEGIN
      LIMIT 1;
 
     IF v_thread_row_id IS NULL THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'THREAD row not found';
+        SET v_message_text = CONCAT('THREAD row not found for THREAD_ID=', p_thread_id, ', CREATE_UNIXTIME=', p_create_unixtime);
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     -- 3. MAZE_FIELD をロックして検証
@@ -342,19 +357,19 @@ BEGIN
      WHERE ID = v_start_cell_id
      FOR UPDATE;
 
-    IF v_owner IS NOT NULL AND (v_outside_wall_owner IS NULL OR v_owner <> v_outside_wall_owner) THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'CELL_OWNER_THREAD_ID already set';
+    IF v_owner IS NOT NULL AND (v_used_cell_owner IS NULL OR v_owner <> v_used_cell_owner) THEN
+        SET v_message_text = CONCAT('CELL_OWNER_THREAD_ID already set (CELL_ID=', v_start_cell_id, ', CELL_OWNER_THREAD_ID=', v_owner, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     IF v_field_type <> v_cell_type THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'CELL_TYPE mismatch';
+        SET v_message_text = CONCAT('CELL_TYPE mismatch (expected=', v_cell_type, ', actual=', v_field_type, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     -- 更新: 所有者を設定
-    IF v_outside_wall_owner IS NOT NULL THEN
-        -- USED_OUTSIDE_WALL_START_POINTS_VIEWから取得した場合はUPDATEしない
+    IF v_used_cell_owner IS NOT NULL THEN
+        -- USED_START_POINTS_VIEWから取得した場合はUPDATEしない
         SET v_result_status = 'NOT_UPDATED';
     ELSE
         -- UNUSED_START_POINTS_VIEWから取得した場合はUPDATEする
@@ -364,8 +379,8 @@ BEGIN
            AND CELL_OWNER_THREAD_ID IS NULL;
 
         IF ROW_COUNT() <> 1 THEN
-            SIGNAL SQLSTATE '45000'
-                SET MESSAGE_TEXT = 'Update failed or row state changed';
+            SET v_message_text = CONCAT('Update failed or row state changed (CELL_ID=', v_start_cell_id, ')');
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
         END IF;
 
         SET v_result_status = 'UPDATED';
@@ -453,6 +468,7 @@ BEGIN
     DECLARE v_cell_type VARCHAR(255);
     DECLARE v_owner BIGINT UNSIGNED;
     DECLARE v_rows INT;
+    DECLARE v_message_text VARCHAR(512);
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
@@ -468,11 +484,9 @@ BEGIN
      LIMIT 1;
     SET v_rows = ROW_COUNT();
     IF v_rows != 1 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'START_CELL not found or not unique';
+        SET v_message_text = CONCAT('START_CELL not found or not unique (X=', p_x, ', Y=', p_y, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
-
-    -- 2. THERAD_LIST から対応するスレッド行を取得
     SELECT ID INTO v_thread_row_id
       FROM THREAD_LIST
      WHERE THREAD_ID = p_thread_id
@@ -480,8 +494,8 @@ BEGIN
      LIMIT 1;
     SET v_rows = ROW_COUNT();
     IF v_rows != 1 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'THREAD row not found or not unique';
+        SET v_message_text = CONCAT('THREAD row not found or not unique (THREAD_ID=', p_thread_id, ', CREATE_UNIXTIME=', p_create_unixtime, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     -- 3. MAZE_FIELD をロックして検証
@@ -492,16 +506,16 @@ BEGIN
      FOR UPDATE;
     SET v_rows = ROW_COUNT();
     IF v_rows != 1 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'MAZE_FIELD row not found';
+        SET v_message_text = CONCAT('MAZE_FIELD row not found (CELL_ID=', v_target_cell_id, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
     IF v_owner IS NOT NULL THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'CELL_OWNER_THREAD_ID is already set';
+        SET v_message_text = CONCAT('CELL_OWNER_THREAD_ID is already set (CELL_ID=', v_target_cell_id, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
     IF v_cell_type <> 'PATH' THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'CELL_TYPE is not PATH';
+        SET v_message_text = CONCAT('CELL_TYPE is not PATH (CELL_ID=', v_target_cell_id, ', CELL_TYPE=', v_cell_type, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     -- 更新: 所有者とタイプを変更
@@ -513,8 +527,8 @@ BEGIN
        AND CELL_TYPE = 'PATH';
     SET v_rows = ROW_COUNT();
     IF v_rows != 1 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Update failed or row state changed';
+        SET v_message_text = CONCAT('Update failed or row state changed (CELL_ID=', v_target_cell_id, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
     COMMIT;
