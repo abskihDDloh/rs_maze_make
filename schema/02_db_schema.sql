@@ -30,7 +30,7 @@ CREATE TABLE `MAZE_CELL` (
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_CELL` (`X`,`Y`) USING BTREE,
   UNIQUE KEY `UNIQUE_ALL` (`ID`,`X`,`Y`)
-) ENGINE=InnoDB AUTO_INCREMENT=2049 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=2372 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -141,6 +141,43 @@ SET character_set_client = utf8mb4;
 SET character_set_client = @saved_cs_client;
 
 --
+-- Temporary table structure for view `THREAD_FIRST_CELLS_LIST_VIEW`
+--
+
+DROP TABLE IF EXISTS `THREAD_FIRST_CELLS_LIST_VIEW`;
+/*!50001 DROP VIEW IF EXISTS `THREAD_FIRST_CELLS_LIST_VIEW`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8mb4;
+/*!50001 CREATE VIEW `THREAD_FIRST_CELLS_LIST_VIEW` AS SELECT
+ 1 AS `TID`,
+  1 AS `THREAD_ID`,
+  1 AS `CREATE_UNIXTIME`,
+  1 AS `START_CELL_ID`,
+  1 AS `START_X`,
+  1 AS `START_Y`,
+  1 AS `OUTSIDE_WALL_CONNECT_TYPE` */;
+SET character_set_client = @saved_cs_client;
+
+--
+-- Temporary table structure for view `THREAD_FROM_OUTSIDE_WALL_VIEW`
+--
+
+DROP TABLE IF EXISTS `THREAD_FROM_OUTSIDE_WALL_VIEW`;
+/*!50001 DROP VIEW IF EXISTS `THREAD_FROM_OUTSIDE_WALL_VIEW`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8mb4;
+/*!50001 CREATE VIEW `THREAD_FROM_OUTSIDE_WALL_VIEW` AS SELECT
+ 1 AS `TID`,
+  1 AS `THREAD_ID`,
+  1 AS `CREATE_UNIXTIME`,
+  1 AS `START_CELL_ID`,
+  1 AS `START_X`,
+  1 AS `START_Y`,
+  1 AS `OUTSIDE_WALL_CONNECT_TYPE`,
+  1 AS `CELL_TYPE` */;
+SET character_set_client = @saved_cs_client;
+
+--
 -- Table structure for table `THREAD_LIST`
 --
 
@@ -160,7 +197,7 @@ CREATE TABLE `THREAD_LIST` (
   KEY `FK_OUTSIDE_WALL_CONNECT` (`OUTSIDE_WALL_CONNECT_TYPE`),
   CONSTRAINT `FK_OUTSIDE_WALL_CONNECT` FOREIGN KEY (`OUTSIDE_WALL_CONNECT_TYPE`) REFERENCES `OUTSIDE_WALL_CONNECT_TYPE` (`TYPE`),
   CONSTRAINT `FK_START_CELL` FOREIGN KEY (`START_CELL`) REFERENCES `MAZE_CELL` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=190 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=229 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -308,6 +345,8 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
+    SELECT v_outside_wall_connect_type AS OUTSIDE_WALL_CONNECT_TYPE;
+
     COMMIT;
 END ;;
 DELIMITER ;
@@ -371,8 +410,8 @@ BEGIN
      WHERE ID = v_start_cell_id
        AND CELL_OWNER_THREAD_ID IS NULL;
 
-
 SET v_result_status = 'UPDATED';
+SET v_outside_wall_connect_type = 'NOT_CONNECT';
 
     IF ROW_COUNT() <> 1 THEN
         SET v_message_text = CONCAT('Update failed or row state changed for MAZE_FIELD (CELL_ID=', v_start_cell_id, ')');
@@ -387,7 +426,6 @@ SET v_result_status = 'UPDATED';
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     ELSEIF v_rows = 1 THEN
             SET v_outside_wall_connect_type = 'DIRECT_CONNECT';
-             SET v_result_status = 'UPDATED_OUTSIDE';
 
    UPDATE THREAD_LIST SET OUTSIDE_WALL_CONNECT_TYPE = v_outside_wall_connect_type WHERE ID = v_thread_row_id;
     
@@ -402,7 +440,7 @@ SET v_result_status = 'UPDATED';
 
     COMMIT;
 
-    SELECT v_result_status AS RESULT_STATUS;
+    SELECT v_result_status AS RESULT_STATUS,   v_outside_wall_connect_type AS OUTSIDE_WALL_CONNECT_TYPE;
 END ;;
 DELIMITER ;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;
@@ -626,6 +664,42 @@ DELIMITER ;
 /*!50001 SET collation_connection      = @saved_col_connection */;
 
 --
+-- Final view structure for view `THREAD_FIRST_CELLS_LIST_VIEW`
+--
+
+/*!50001 DROP VIEW IF EXISTS `THREAD_FIRST_CELLS_LIST_VIEW`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
+/*!50001 VIEW `THREAD_FIRST_CELLS_LIST_VIEW` AS select `THREAD_LIST`.`ID` AS `TID`,`THREAD_LIST`.`THREAD_ID` AS `THREAD_ID`,`THREAD_LIST`.`CREATE_UNIXTIME` AS `CREATE_UNIXTIME`,`THREAD_LIST`.`START_CELL` AS `START_CELL_ID`,`MAZE_CELL`.`X` AS `START_X`,`MAZE_CELL`.`Y` AS `START_Y`,`THREAD_LIST`.`OUTSIDE_WALL_CONNECT_TYPE` AS `OUTSIDE_WALL_CONNECT_TYPE` from (`THREAD_LIST` join `MAZE_CELL` on(`THREAD_LIST`.`START_CELL` = `MAZE_CELL`.`ID`)) */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
+-- Final view structure for view `THREAD_FROM_OUTSIDE_WALL_VIEW`
+--
+
+/*!50001 DROP VIEW IF EXISTS `THREAD_FROM_OUTSIDE_WALL_VIEW`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
+/*!50001 VIEW `THREAD_FROM_OUTSIDE_WALL_VIEW` AS select `THREAD_FIRST_CELLS_LIST_VIEW`.`TID` AS `TID`,`THREAD_FIRST_CELLS_LIST_VIEW`.`THREAD_ID` AS `THREAD_ID`,`THREAD_FIRST_CELLS_LIST_VIEW`.`CREATE_UNIXTIME` AS `CREATE_UNIXTIME`,`THREAD_FIRST_CELLS_LIST_VIEW`.`START_CELL_ID` AS `START_CELL_ID`,`THREAD_FIRST_CELLS_LIST_VIEW`.`START_X` AS `START_X`,`THREAD_FIRST_CELLS_LIST_VIEW`.`START_Y` AS `START_Y`,`THREAD_FIRST_CELLS_LIST_VIEW`.`OUTSIDE_WALL_CONNECT_TYPE` AS `OUTSIDE_WALL_CONNECT_TYPE`,`OUTSIDE_WALL_START_POINTS_VIEW`.`CELL_TYPE` AS `CELL_TYPE` from (`THREAD_FIRST_CELLS_LIST_VIEW` join `OUTSIDE_WALL_START_POINTS_VIEW` on(`THREAD_FIRST_CELLS_LIST_VIEW`.`START_CELL_ID` = `OUTSIDE_WALL_START_POINTS_VIEW`.`CELL_ID`)) */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
 -- Final view structure for view `UNUSED_START_POINTS_VIEW`
 --
 
@@ -688,4 +762,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-03 20:37:38
+-- Dump completed on 2026-01-04  0:47:06
