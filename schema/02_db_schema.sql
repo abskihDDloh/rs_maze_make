@@ -30,7 +30,7 @@ CREATE TABLE `MAZE_CELL` (
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_CELL` (`X`,`Y`) USING BTREE,
   UNIQUE KEY `UNIQUE_ALL` (`ID`,`X`,`Y`)
-) ENGINE=InnoDB AUTO_INCREMENT=1353 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=1403 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -137,14 +137,14 @@ DROP TABLE IF EXISTS `THREAD_LIST`;
 CREATE TABLE `THREAD_LIST` (
   `ID` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `THREAD_ID` varchar(80) NOT NULL,
-  `CREATE_UNIXTIME` timestamp(6) NOT NULL DEFAULT '0000-00-00 00:00:00.000000',
+  `CREATE_UNIXTIME` bigint(20) NOT NULL,
   `START_CELL` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_THREAD_IDENTIFICATION_COLUMN` (`THREAD_ID`,`CREATE_UNIXTIME`),
   UNIQUE KEY `UNIQUE_ALL_COLUMN` (`ID`,`THREAD_ID`,`CREATE_UNIXTIME`) USING BTREE,
   UNIQUE KEY `UNIQUE_START_CELL` (`START_CELL`),
   CONSTRAINT `FK_START_CELL` FOREIGN KEY (`START_CELL`) REFERENCES `MAZE_CELL` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=144 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=147 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -211,7 +211,7 @@ SET character_set_client = @saved_cs_client;
 /*!50003 SET character_set_results = utf8mb4 */ ;
 /*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
 DELIMITER ;;
-CREATE DEFINER=`mazemake_u`@`localhost` PROCEDURE `ADD_NEW_THREAD`(IN `p_x` BIGINT UNSIGNED, IN `p_y` BIGINT UNSIGNED, IN `p_thread_id` VARCHAR(255), IN `p_create_unixtime` TIMESTAMP)
+CREATE DEFINER=`mazemake_u`@`localhost` PROCEDURE `ADD_NEW_THREAD`(IN `p_x` BIGINT UNSIGNED, IN `p_y` BIGINT UNSIGNED, IN `p_thread_id` VARCHAR(255), IN `p_create_unixtime` BIGINT)
     SQL SECURITY INVOKER
 BEGIN
     DECLARE v_start_cell_id BIGINT UNSIGNED;
@@ -297,7 +297,7 @@ DELIMITER ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
 /*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
 DELIMITER ;;
-CREATE DEFINER=`mazemake_u`@`localhost` PROCEDURE `GET_START_POINT`(IN `p_x` BIGINT UNSIGNED, IN `p_y` BIGINT UNSIGNED, IN `p_thread_id` VARCHAR(255), IN `p_create_unixtime` TIMESTAMP)
+CREATE DEFINER=`mazemake_u`@`localhost` PROCEDURE `GET_START_POINT`(IN `p_x` BIGINT UNSIGNED, IN `p_y` BIGINT UNSIGNED, IN `p_thread_id` VARCHAR(255), IN `p_create_unixtime` BIGINT)
     SQL SECURITY INVOKER
 BEGIN
     DECLARE v_start_cell_id BIGINT UNSIGNED;
@@ -475,7 +475,7 @@ DELIMITER ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
 /*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
 DELIMITER ;;
-CREATE DEFINER=`mazemake_u`@`localhost` PROCEDURE `PATH_TO_WALL`(IN `p_x` BIGINT UNSIGNED, IN `p_y` BIGINT UNSIGNED, IN `p_thread_id` VARCHAR(255), IN `p_create_unixtime` TIMESTAMP)
+CREATE DEFINER=`mazemake_u`@`localhost` PROCEDURE `PATH_TO_WALL`(IN `p_x` BIGINT UNSIGNED, IN `p_y` BIGINT UNSIGNED, IN `p_thread_id` VARCHAR(255), IN `p_create_unixtime` BIGINT)
     SQL SECURITY INVOKER
 BEGIN
     DECLARE v_target_cell_id BIGINT UNSIGNED;
@@ -689,4 +689,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-03 16:03:26
+-- Dump completed on 2026-01-03 16:16:57

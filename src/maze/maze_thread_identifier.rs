@@ -27,7 +27,7 @@ impl MazeThreadIdentifier {
         let unix_time: i64 = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
-            .as_millis() as i64;
+            .as_nanos() as i64;
         MazeThreadIdentifier { tid_id, unix_time }
     }
 
@@ -40,21 +40,6 @@ impl MazeThreadIdentifier {
     pub fn unix_time(&self) -> i64 {
         self.unix_time
     }
-    pub fn unix_time_as_date_time_utc(&self) -> Option<DateTimeUtc> {
-        let secs = self.unix_time / 1_000;
-        let millis = (self.unix_time % 1_000).abs() as u32;
-        let nanos: u32 = millis * 1_000_000; // 1ms = 1,000,000ns
-        let dt_utc = DateTime::from_timestamp(secs, nanos);
-        dt_utc
-    }
-
-    pub fn unix_time_as_datetime_formatted_str(
-        &self,
-    ) -> Option<String> {
-        let dt_utc = self.unix_time_as_date_time_utc();
-        dt_utc.map(|dt| dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
-    }
-
     pub fn same_thread(&self, other: &MazeThreadIdentifier) -> bool {
         self.tid_id == other.tid_id
     }
@@ -112,18 +97,5 @@ mod tests {
         let second = MazeThreadIdentifier::new();
 
         assert!(second.unix_time() >= first.unix_time());
-    }
-
-    #[test]
-    fn unix_time_as_date_time_utc_matches_current_behavior() {
-        let identifier = MazeThreadIdentifier::new();
-
-        let dt = identifier
-            .unix_time_as_date_time_utc()
-            .expect("failed to convert to datetime");
-
-        // DateTimeUtc::timestamp は秒精度。ミリ秒が下3桁として含まれていることを確認。
-        let millis_component = (identifier.unix_time() % 1_000) as u32;
-        assert_eq!(dt.timestamp_millis() % 1_000, millis_component as i64);
     }
 }

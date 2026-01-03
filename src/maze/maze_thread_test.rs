@@ -36,9 +36,10 @@ mod tests {
             unused_count
         );
 
-        // 条件B: 以下の座標のいずれかが "WALL" になっている
+        // 条件B: 以下の座標のいずれか1つだけが "WALL" になっている
         let wall_candidates = vec![(2, 1), (3, 2), (2, 3), (1, 2)];
         let mut wall_found = false;
+        let mut wall_count = 0;
         for (x, y) in &wall_candidates {
             let cell: Vec<crate::database::entities::maze_cell_status_view::Model> =
                 crate::database::entities::maze_cell_status_view::Entity::find()
@@ -55,6 +56,7 @@ mod tests {
 
             if !cell.is_empty() && cell[0].cell_type == WALL {
                 wall_found = true;
+                wall_count += 1;
                 eprintln!("Found WALL at ({}, {})", x, y);
                 break;
             }
@@ -63,6 +65,11 @@ mod tests {
             wall_found,
             "At least one of {:?} should be WALL",
             wall_candidates
+        );
+        assert_eq!(
+            wall_count, 1,
+            "Only one of {:?} should be WALL, but found {}",
+            wall_candidates, wall_count
         );
 
         // 条件C: 以下の座標がすべて "PATH" になっている

@@ -105,8 +105,8 @@ pub async fn get_adjacent_extendable_pillar(
                 vec![
                     selected_pillar.x().into(),
                     selected_pillar.y().into(),
-                    tid.as_str().into(),
-                    tid.unix_time_as_datetime_formatted_str().unwrap_or_default().into(),
+                    tid.thread_id_as_str().into(),
+                    tid.unix_time().into(),
                 ],
             ))
             .await;
@@ -160,8 +160,8 @@ pub async fn path_to_wall(
             vec![
                 path_cell.x().into(),
                 path_cell.y().into(),
-                tid.as_str().into(),
-                tid.unix_time_as_datetime_formatted_str().unwrap_or_default().into(),
+                tid.thread_id_as_str().into(),
+                tid.unix_time().into(),
             ],
         ))
         .await?;
@@ -199,9 +199,7 @@ mod tests {
         // スレッドID生成
         let tid = MazeThreadIdentifier::new();
         let tid_str = tid.thread_id_as_str();
-        let unix_time = tid
-            .unix_time_as_date_time_utc()
-            .expect("failed to convert to datetime");
+        let unix_time = tid.unix_time();
 
         // (2,0) を開始点としてADD_NEW_THREADストアドプロシージャで登録
         let sql = "CALL ADD_NEW_THREAD(?, ?, ?, ?)";
@@ -268,10 +266,7 @@ mod tests {
         // スレッドID生成
         let tid = MazeThreadIdentifier::new();
         let tid_str = tid.thread_id_as_str();
-        let unix_time = tid
-            .unix_time_as_date_time_utc()
-            .expect("failed to convert to datetime");
-
+        let unix_time = tid.unix_time();
         // (2,2) を開始点としてADD_NEW_THREADストアドプロシージャで登録
         let sql = "CALL ADD_NEW_THREAD(?, ?, ?, ?)";
         db.execute(Statement::from_sql_and_values(

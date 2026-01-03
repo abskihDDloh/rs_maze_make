@@ -10,7 +10,7 @@ pub struct Model {
     #[sea_orm(column_name = "THREAD_ID")]
     pub thread_id: String,
     #[sea_orm(column_name = "CREATE_UNIXTIME")]
-    pub create_unixtime: DateTimeUtc,
+    pub create_unixtime: i64,
     #[sea_orm(column_name = "START_CELL", unique)]
     pub start_cell: u64,
 }

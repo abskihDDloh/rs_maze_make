@@ -32,8 +32,8 @@ pub async fn select_random_start_point_from_db(
     let selected_point = &unused_start_points[random_index];
     let x = selected_point.x;
     let y = selected_point.y;
-    let tid_str = tid.as_str();
-    let unix_time = tid.unix_time_as_datetime_formatted_str();
+    let tid_str = tid.thread_id_as_str();
+    let unix_time = tid.unix_time();
     // 選択したスタートポイントとMazeThreadIdentifierの内容をADD_NEW_THREADプロシージャを使ってTHERAD_LISTテーブルとMAZE_FIELDテーブルに登録する。
     let sql = "CALL ADD_NEW_THREAD(?, ?, ?, ?)";
     txn.execute(Statement::from_sql_and_values(
@@ -43,7 +43,7 @@ pub async fn select_random_start_point_from_db(
             x.into(),
             y.into(),
             tid_str.to_string().into(),
-            unix_time.unwrap_or_default().into(),
+            unix_time.into(),
         ],
     ))
     .await?;
