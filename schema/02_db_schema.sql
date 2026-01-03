@@ -30,7 +30,7 @@ CREATE TABLE `MAZE_CELL` (
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_CELL` (`X`,`Y`) USING BTREE,
   UNIQUE KEY `UNIQUE_ALL` (`ID`,`X`,`Y`)
-) ENGINE=InnoDB AUTO_INCREMENT=578 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=1028 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -129,7 +129,7 @@ CREATE TABLE `THREAD_LIST` (
   UNIQUE KEY `UNIQUE_ALL_COLUMN` (`ID`,`THREAD_ID`,`CREATE_UNIXTIME`) USING BTREE,
   UNIQUE KEY `UNIQUE_START_CELL` (`START_CELL`),
   CONSTRAINT `FK_START_CELL` FOREIGN KEY (`START_CELL`) REFERENCES `MAZE_CELL` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=57 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=113 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -212,7 +212,7 @@ BEGIN
 
     START TRANSACTION;
 
-    -- X, Y から START_CELL_ID を取得
+    
     SELECT CELL_ID INTO v_start_cell_id
       FROM START_POINTS_VIEW
      WHERE X = p_x AND Y = p_y
@@ -224,7 +224,7 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
-    -- THREAD_LIST に挿入
+    
     INSERT INTO THREAD_LIST (THREAD_ID, CREATE_UNIXTIME, START_CELL)
     VALUES (p_thread_id, p_create_unixtime, v_start_cell_id);
 
@@ -236,7 +236,7 @@ BEGIN
 
     SET v_thread_row_id = LAST_INSERT_ID();
 
-    -- MAZE_FIELD の該当セルをロックして確認
+    
     SELECT CELL_OWNER_THREAD_ID INTO v_owner
       FROM MAZE_FIELD
      WHERE ID = v_start_cell_id
@@ -253,7 +253,7 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
-    -- MAZE_FIELD を更新
+    
     UPDATE MAZE_FIELD
        SET CELL_OWNER_THREAD_ID = v_thread_row_id
      WHERE ID = v_start_cell_id
@@ -301,15 +301,15 @@ BEGIN
 
     START TRANSACTION;
 
-    -- 1. UNUSED_START_POINTS_VIEW または USED_OUTSIDE_WALL_START_POINTS_VIEW から開始セル取得
-    -- まずUNUSED_START_POINTS_VIEWから取得を試みる
+    
+    
     SELECT CELL_ID, CELL_TYPE
       INTO v_start_cell_id, v_cell_type
       FROM UNUSED_START_POINTS_VIEW
      WHERE X = p_x AND Y = p_y
      LIMIT 1;
 
-    -- レコードがない場合はUSED_START_POINTS_VIEWから取得
+    
     IF v_start_cell_id IS NULL THEN
         SELECT CELL_ID, CELL_TYPE, CELL_OWNER_THREAD_ID
           INTO v_start_cell_id, v_cell_type, v_used_cell_owner
@@ -319,12 +319,12 @@ BEGIN
          LIMIT 1;
     END IF;
 
-    IF v_start_cell_id IS NULL THEN
+    IF v_start_cell_id IS NULL AND v_used_cell_owner IS NULL THEN
         SET v_message_text = CONCAT('START_CELL not found for X=', p_x, ', Y=', p_y);
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
--- USED_START_POINTS_VIEWからv_start_cell_idを取得した場合は、USED_OUTSIDE_WALL_START_POINTS_VIEWのCELL_OWNER_THREAD_ID列に、v_used_cell_ownerの値を持つレコードがあるか確認する。ない場合はエラー。
+
     IF v_used_cell_owner IS NOT NULL THEN
         SELECT COUNT(*)
           INTO v_owner
@@ -337,7 +337,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- 2. THREAD_LIST からスレッド行取得
+    
     SELECT ID
       INTO v_thread_row_id
       FROM THREAD_LIST
@@ -350,7 +350,7 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
-    -- 3. MAZE_FIELD をロックして検証
+    
     SELECT CELL_OWNER_THREAD_ID, CELL_TYPE
       INTO v_owner, v_field_type
       FROM MAZE_FIELD
@@ -367,12 +367,12 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
-    -- 更新: 所有者を設定
+    
     IF v_used_cell_owner IS NOT NULL THEN
-        -- USED_START_POINTS_VIEWから取得した場合はUPDATEしない
+        
         SET v_result_status = 'NOT_UPDATED';
     ELSE
-        -- UNUSED_START_POINTS_VIEWから取得した場合はUPDATEする
+        
         UPDATE MAZE_FIELD
            SET CELL_OWNER_THREAD_ID = v_thread_row_id
          WHERE ID = v_start_cell_id
@@ -418,25 +418,25 @@ BEGIN
 
     START TRANSACTION;
 
-    -- MAZE_CELLテーブルにX,YをINSERT
+    
     INSERT INTO MAZE_CELL (X, Y)
     VALUES (p_x, p_y);
 
-    -- INSERTされた行数をチェック
+    
     SET v_row_count = ROW_COUNT();
     IF v_row_count != 1 THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Failed to insert into MAZE_CELL or unexpected row count';
     END IF;
 
-    -- INSERTした行のIDを取得
+    
     SET v_cell_id = LAST_INSERT_ID();
 
-    -- MAZE_FIELDにIDとCELL_TYPEをINSERT
+    
     INSERT INTO MAZE_FIELD (ID, CELL_TYPE)
     VALUES (v_cell_id, p_cell_type);
 
-    -- INSERTされた行数をチェック
+    
     SET v_row_count = ROW_COUNT();
     IF v_row_count != 1 THEN
         SIGNAL SQLSTATE '45000'
@@ -477,7 +477,7 @@ BEGIN
 
     START TRANSACTION;
 
-    -- 1. X,Y から START_CELL_ID
+    
     SELECT ID INTO v_target_cell_id
       FROM MAZE_CELL
      WHERE X = p_x AND Y = p_y
@@ -498,7 +498,7 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
-    -- 3. MAZE_FIELD をロックして検証
+    
     SELECT CELL_OWNER_THREAD_ID, CELL_TYPE
       INTO v_owner, v_cell_type
       FROM MAZE_FIELD
@@ -518,7 +518,7 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
-    -- 更新: 所有者とタイプを変更
+    
     UPDATE MAZE_FIELD
        SET CELL_OWNER_THREAD_ID = v_thread_row_id,
            CELL_TYPE = 'WALL'
@@ -656,4 +656,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-03  9:48:03
+-- Dump completed on 2026-01-03 15:07:46
