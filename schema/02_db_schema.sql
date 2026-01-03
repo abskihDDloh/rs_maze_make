@@ -30,7 +30,7 @@ CREATE TABLE `MAZE_CELL` (
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_CELL` (`X`,`Y`) USING BTREE,
   UNIQUE KEY `UNIQUE_ALL` (`ID`,`X`,`Y`)
-) ENGINE=InnoDB AUTO_INCREMENT=1403 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=2049 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -98,6 +98,19 @@ CREATE TABLE `MAZE_FIELD` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `OUTSIDE_WALL_CONNECT_TYPE`
+--
+
+DROP TABLE IF EXISTS `OUTSIDE_WALL_CONNECT_TYPE`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `OUTSIDE_WALL_CONNECT_TYPE` (
+  `TYPE` varchar(20) NOT NULL DEFAULT 'NOT_CONNECT',
+  PRIMARY KEY (`TYPE`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Temporary table structure for view `OUTSIDE_WALL_START_POINTS_VIEW`
 --
 
@@ -139,12 +152,15 @@ CREATE TABLE `THREAD_LIST` (
   `THREAD_ID` varchar(80) NOT NULL,
   `CREATE_UNIXTIME` bigint(20) NOT NULL,
   `START_CELL` bigint(20) unsigned NOT NULL,
+  `OUTSIDE_WALL_CONNECT_TYPE` varchar(20) NOT NULL,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_THREAD_IDENTIFICATION_COLUMN` (`THREAD_ID`,`CREATE_UNIXTIME`),
-  UNIQUE KEY `UNIQUE_ALL_COLUMN` (`ID`,`THREAD_ID`,`CREATE_UNIXTIME`) USING BTREE,
   UNIQUE KEY `UNIQUE_START_CELL` (`START_CELL`),
+  UNIQUE KEY `UNIQUE_ALL_COLUMN` (`ID`,`THREAD_ID`,`CREATE_UNIXTIME`,`OUTSIDE_WALL_CONNECT_TYPE`) USING BTREE,
+  KEY `FK_OUTSIDE_WALL_CONNECT` (`OUTSIDE_WALL_CONNECT_TYPE`),
+  CONSTRAINT `FK_OUTSIDE_WALL_CONNECT` FOREIGN KEY (`OUTSIDE_WALL_CONNECT_TYPE`) REFERENCES `OUTSIDE_WALL_CONNECT_TYPE` (`TYPE`),
   CONSTRAINT `FK_START_CELL` FOREIGN KEY (`START_CELL`) REFERENCES `MAZE_CELL` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=147 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=190 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -177,7 +193,8 @@ SET character_set_client = utf8mb4;
   1 AS `CELL_TYPE`,
   1 AS `CELL_OWNER_THREAD_ID`,
   1 AS `THREAD_ID`,
-  1 AS `CREATE_UNIXTIME` */;
+  1 AS `CREATE_UNIXTIME`,
+  1 AS `OUTSIDE_WALL_CONNECT_TYPE` */;
 SET character_set_client = @saved_cs_client;
 
 --
@@ -195,7 +212,8 @@ SET character_set_client = utf8mb4;
   1 AS `CELL_TYPE`,
   1 AS `CELL_OWNER_THREAD_ID`,
   1 AS `THREAD_ID`,
-  1 AS `CREATE_UNIXTIME` */;
+  1 AS `CREATE_UNIXTIME`,
+  1 AS `OUTSIDE_WALL_CONNECT_TYPE` */;
 SET character_set_client = @saved_cs_client;
 
 --
@@ -218,6 +236,7 @@ BEGIN
     DECLARE v_thread_row_id BIGINT UNSIGNED;
     DECLARE v_owner BIGINT UNSIGNED;
     DECLARE v_rows INT;
+    DECLARE v_outside_wall_connect_type VARCHAR(20);
     DECLARE v_message_text VARCHAR(512);
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
@@ -239,9 +258,18 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
+    SELECT COUNT(*) INTO v_rows  FROM OUTSIDE_WALL_START_POINTS_VIEW WHERE CELL_ID = v_start_cell_id LIMIT 1;
+    IF v_rows > 1 THEN
+        SET v_message_text = CONCAT('OUTSIDE_WALL_START_POINTS_VIEW_CELL not found or not unique (X=', p_x, ', Y=', p_y, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
+    ELSEIF v_rows = 1 THEN
+            SET v_outside_wall_connect_type = 'DIRECT_CONNECT';
+    ELSE
+            SET v_outside_wall_connect_type = 'NOT_CONNECT'; 
+    END IF;
     
-    INSERT INTO THREAD_LIST (THREAD_ID, CREATE_UNIXTIME, START_CELL)
-    VALUES (p_thread_id, p_create_unixtime, v_start_cell_id);
+    INSERT INTO THREAD_LIST (THREAD_ID, CREATE_UNIXTIME, START_CELL,OUTSIDE_WALL_CONNECT_TYPE)
+    VALUES (p_thread_id, p_create_unixtime, v_start_cell_id,v_outside_wall_connect_type);
 
     SET v_rows = ROW_COUNT();
     IF v_rows != 1 THEN
@@ -289,7 +317,7 @@ DELIMITER ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
-/*!50003 DROP PROCEDURE IF EXISTS `GET_START_POINT` */;
+/*!50003 DROP PROCEDURE IF EXISTS `GET_START_POINT_FROM_UNUSED_START_POINTS` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
@@ -297,17 +325,16 @@ DELIMITER ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
 /*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
 DELIMITER ;;
-CREATE DEFINER=`mazemake_u`@`localhost` PROCEDURE `GET_START_POINT`(IN `p_x` BIGINT UNSIGNED, IN `p_y` BIGINT UNSIGNED, IN `p_thread_id` VARCHAR(255), IN `p_create_unixtime` BIGINT)
+CREATE DEFINER=`mazemake_u`@`localhost` PROCEDURE `GET_START_POINT_FROM_UNUSED_START_POINTS`(IN `p_x` BIGINT UNSIGNED, IN `p_y` BIGINT UNSIGNED, IN `p_thread_id` VARCHAR(255), IN `p_create_unixtime` BIGINT)
     SQL SECURITY INVOKER
 BEGIN
     DECLARE v_start_cell_id BIGINT UNSIGNED;
-    DECLARE v_cell_type VARCHAR(255);
     DECLARE v_thread_row_id BIGINT UNSIGNED;
-    DECLARE v_owner BIGINT UNSIGNED;
-    DECLARE v_field_type VARCHAR(255);
-    DECLARE v_used_cell_owner BIGINT UNSIGNED DEFAULT NULL;
     DECLARE v_result_status VARCHAR(20);
     DECLARE v_message_text VARCHAR(512);
+    DECLARE v_curerent_outside_wall_connect_type VARCHAR(20);
+    DECLARE v_outside_wall_connect_type VARCHAR(20);
+    DECLARE v_rows INT;
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
@@ -316,45 +343,19 @@ BEGIN
 
     START TRANSACTION;
 
-    
-    
-    SELECT CELL_ID, CELL_TYPE
-      INTO v_start_cell_id, v_cell_type
+    SELECT CELL_ID
+      INTO v_start_cell_id
       FROM UNUSED_START_POINTS_VIEW
      WHERE X = p_x AND Y = p_y
      LIMIT 1;
 
-    
     IF v_start_cell_id IS NULL THEN
-        SELECT CELL_ID, CELL_TYPE, CELL_OWNER_THREAD_ID
-          INTO v_start_cell_id, v_cell_type, v_used_cell_owner
-          FROM USED_START_POINTS_VIEW
-         WHERE X = p_x AND Y = p_y
-           AND (THREAD_ID <> p_thread_id OR CREATE_UNIXTIME <> p_create_unixtime)
-         LIMIT 1;
-    END IF;
-
-    IF v_start_cell_id IS NULL AND v_used_cell_owner IS NULL THEN
         SET v_message_text = CONCAT('START_CELL not found for X=', p_x, ', Y=', p_y);
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
-
-    IF v_used_cell_owner IS NOT NULL THEN
-        SELECT COUNT(*)
-          INTO v_owner
-          FROM USED_OUTSIDE_WALL_START_POINTS_VIEW
-         WHERE CELL_OWNER_THREAD_ID = v_used_cell_owner;
-
-        IF v_owner = 0 THEN
-            SET v_message_text = CONCAT('USED_START_POINTS_VIEW record not found in USED_OUTSIDE_WALL_START_POINTS_VIEW (CELL_OWNER_THREAD_ID=', v_used_cell_owner, ')');
-            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
-        END IF;
-    END IF;
-
-    
-    SELECT ID
-      INTO v_thread_row_id
+    SELECT ID,OUTSIDE_WALL_CONNECT_TYPE
+      INTO v_thread_row_id,v_curerent_outside_wall_connect_type
       FROM THREAD_LIST
      WHERE THREAD_ID = p_thread_id
        AND CREATE_UNIXTIME = p_create_unixtime
@@ -365,40 +366,38 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
 
-    
-    SELECT CELL_OWNER_THREAD_ID, CELL_TYPE
-      INTO v_owner, v_field_type
-      FROM MAZE_FIELD
+    UPDATE MAZE_FIELD
+       SET CELL_OWNER_THREAD_ID = v_thread_row_id
      WHERE ID = v_start_cell_id
-     FOR UPDATE;
+       AND CELL_OWNER_THREAD_ID IS NULL;
 
-    IF v_owner IS NOT NULL AND (v_used_cell_owner IS NULL OR v_owner <> v_used_cell_owner) THEN
-        SET v_message_text = CONCAT('CELL_OWNER_THREAD_ID already set (CELL_ID=', v_start_cell_id, ', CELL_OWNER_THREAD_ID=', v_owner, ')');
+
+SET v_result_status = 'UPDATED';
+
+    IF ROW_COUNT() <> 1 THEN
+        SET v_message_text = CONCAT('Update failed or row state changed for MAZE_FIELD (CELL_ID=', v_start_cell_id, ')');
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
     END IF;
-
-    IF v_field_type <> v_cell_type THEN
-        SET v_message_text = CONCAT('CELL_TYPE mismatch (expected=', v_cell_type, ', actual=', v_field_type, ')');
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
-    END IF;
-
     
-    IF v_used_cell_owner IS NOT NULL THEN
-        
-        SET v_result_status = 'NOT_UPDATED';
-    ELSE
-        
-        UPDATE MAZE_FIELD
-           SET CELL_OWNER_THREAD_ID = v_thread_row_id
-         WHERE ID = v_start_cell_id
-           AND CELL_OWNER_THREAD_ID IS NULL;
+    IF v_curerent_outside_wall_connect_type = 'NOT_CONNECT' THEN
+    
+            SELECT COUNT(*) INTO v_rows  FROM OUTSIDE_WALL_START_POINTS_VIEW WHERE CELL_ID = v_start_cell_id LIMIT 1;
+    IF v_rows > 1 THEN
+        SET v_message_text = CONCAT('OUTSIDE_WALL_START_POINTS_VIEW_CELL not found or not unique (X=', p_x, ', Y=', p_y, ')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
+    ELSEIF v_rows = 1 THEN
+            SET v_outside_wall_connect_type = 'DIRECT_CONNECT';
+             SET v_result_status = 'UPDATED_OUTSIDE';
 
-        IF ROW_COUNT() <> 1 THEN
-            SET v_message_text = CONCAT('Update failed or row state changed (CELL_ID=', v_start_cell_id, ')');
-            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
-        END IF;
-
-        SET v_result_status = 'UPDATED';
+   UPDATE THREAD_LIST SET OUTSIDE_WALL_CONNECT_TYPE = v_outside_wall_connect_type WHERE ID = v_thread_row_id;
+    
+    IF ROW_COUNT() <> 1 THEN
+        SET v_message_text = CONCAT('Update failed or row state changed for THREAD_LIST. (THREAD_ID=', p_thread_id, ', CREATE_UNIXTIME=', p_create_unixtime,')');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message_text;
+    END IF;
+  
+    END IF;
+    
     END IF;
 
     COMMIT;
@@ -657,7 +656,7 @@ DELIMITER ;
 /*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
-/*!50001 VIEW `USED_OUTSIDE_WALL_START_POINTS_VIEW` AS select `USED_START_POINTS_VIEW`.`CELL_ID` AS `CELL_ID`,`USED_START_POINTS_VIEW`.`X` AS `X`,`USED_START_POINTS_VIEW`.`Y` AS `Y`,`USED_START_POINTS_VIEW`.`CELL_TYPE` AS `CELL_TYPE`,`USED_START_POINTS_VIEW`.`CELL_OWNER_THREAD_ID` AS `CELL_OWNER_THREAD_ID`,`USED_START_POINTS_VIEW`.`THREAD_ID` AS `THREAD_ID`,`USED_START_POINTS_VIEW`.`CREATE_UNIXTIME` AS `CREATE_UNIXTIME` from (`OUTSIDE_WALL_START_POINTS_VIEW` join `USED_START_POINTS_VIEW` on(`OUTSIDE_WALL_START_POINTS_VIEW`.`CELL_ID` = `USED_START_POINTS_VIEW`.`CELL_ID`)) */;
+/*!50001 VIEW `USED_OUTSIDE_WALL_START_POINTS_VIEW` AS select `USED_START_POINTS_VIEW`.`CELL_ID` AS `CELL_ID`,`USED_START_POINTS_VIEW`.`X` AS `X`,`USED_START_POINTS_VIEW`.`Y` AS `Y`,`USED_START_POINTS_VIEW`.`CELL_TYPE` AS `CELL_TYPE`,`USED_START_POINTS_VIEW`.`CELL_OWNER_THREAD_ID` AS `CELL_OWNER_THREAD_ID`,`USED_START_POINTS_VIEW`.`THREAD_ID` AS `THREAD_ID`,`USED_START_POINTS_VIEW`.`CREATE_UNIXTIME` AS `CREATE_UNIXTIME`,`USED_START_POINTS_VIEW`.`OUTSIDE_WALL_CONNECT_TYPE` AS `OUTSIDE_WALL_CONNECT_TYPE` from (`OUTSIDE_WALL_START_POINTS_VIEW` join `USED_START_POINTS_VIEW` on(`OUTSIDE_WALL_START_POINTS_VIEW`.`CELL_ID` = `USED_START_POINTS_VIEW`.`CELL_ID`)) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -675,7 +674,7 @@ DELIMITER ;
 /*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
-/*!50001 VIEW `USED_START_POINTS_VIEW` AS select `spv`.`CELL_ID` AS `CELL_ID`,`spv`.`X` AS `X`,`spv`.`Y` AS `Y`,`spv`.`CELL_TYPE` AS `CELL_TYPE`,`mf`.`CELL_OWNER_THREAD_ID` AS `CELL_OWNER_THREAD_ID`,`tl`.`THREAD_ID` AS `THREAD_ID`,`tl`.`CREATE_UNIXTIME` AS `CREATE_UNIXTIME` from (((select `MAZE_FIELD`.`ID` AS `ID`,`MAZE_FIELD`.`CELL_TYPE` AS `CELL_TYPE`,`MAZE_FIELD`.`CELL_OWNER_THREAD_ID` AS `CELL_OWNER_THREAD_ID` from `MAZE_FIELD` where `MAZE_FIELD`.`CELL_OWNER_THREAD_ID` is not null) `mf` join `START_POINTS_VIEW` `spv` on(`mf`.`ID` = `spv`.`CELL_ID`)) join `THREAD_LIST` `tl` on(`tl`.`ID` = `mf`.`CELL_OWNER_THREAD_ID`)) */;
+/*!50001 VIEW `USED_START_POINTS_VIEW` AS select `spv`.`CELL_ID` AS `CELL_ID`,`spv`.`X` AS `X`,`spv`.`Y` AS `Y`,`spv`.`CELL_TYPE` AS `CELL_TYPE`,`mf`.`CELL_OWNER_THREAD_ID` AS `CELL_OWNER_THREAD_ID`,`tl`.`THREAD_ID` AS `THREAD_ID`,`tl`.`CREATE_UNIXTIME` AS `CREATE_UNIXTIME`,`tl`.`OUTSIDE_WALL_CONNECT_TYPE` AS `OUTSIDE_WALL_CONNECT_TYPE` from (((select `MAZE_FIELD`.`ID` AS `ID`,`MAZE_FIELD`.`CELL_TYPE` AS `CELL_TYPE`,`MAZE_FIELD`.`CELL_OWNER_THREAD_ID` AS `CELL_OWNER_THREAD_ID` from `MAZE_FIELD` where `MAZE_FIELD`.`CELL_OWNER_THREAD_ID` is not null) `mf` join `START_POINTS_VIEW` `spv` on(`mf`.`ID` = `spv`.`CELL_ID`)) join `THREAD_LIST` `tl` on(`tl`.`ID` = `mf`.`CELL_OWNER_THREAD_ID`)) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -689,4 +688,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-03 16:16:57
+-- Dump completed on 2026-01-03 20:37:38
