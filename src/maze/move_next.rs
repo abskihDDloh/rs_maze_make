@@ -7,7 +7,8 @@ use crate::database::initializer::{MazeCellTypeEnum, OutsideWallConnectTypeEnum}
 use crate::maze::maze_point::select_between_points_without_edge;
 
 use crate::maze::maze_thread_utility::{
-    check_unused_pillars, get_cell_status, get_pillar, is_point_outside_wall, is_this_thread_from_outside_wall, select_my_thread_record_from_tx
+    check_unused_pillars, get_cell_status, get_pillar, is_point_outside_wall,
+    is_this_thread_from_outside_wall, select_my_thread_record_from_tx,
 };
 use crate::maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier};
 
@@ -39,7 +40,11 @@ pub async fn get_adjacent_unused_extendable_pillar(
 
     loop {
         if unused_points.is_empty() {
-            return Err("No extendable adjacent pillars available.".into());
+            return Err(format!(
+                "No extendable adjacent pillars available. {}",
+                debug_get_adjacent_extendable_pillar!(tid, current_pillar, "None")
+            )
+            .into());
         }
         debug!(
             "{}",
@@ -127,11 +132,7 @@ pub async fn get_adjacent_unused_extendable_pillar(
         }
         // selected_point.cell_id に当てはまるMAZE_FIELDのCELL_OWNER_THREAD_IDがNullの場合にかぎり、CELL_OWNER_THREAD_IDをthread_record.idに更新する。
         // エラーの場合は次の候補へ。
-        let result = get_pillar(
-            txn,
-            selected_point.cell_id,
-            thread_record.id,
-        ).await;
+        let result = get_pillar(txn, selected_point.cell_id, thread_record.id).await;
         if result.is_err() {
             warn!(
                 "{} Failed to get pillar: {:?}, error: {:?}",
