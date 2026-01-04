@@ -1,4 +1,5 @@
 use sea_orm::{DatabaseTransaction, EntityTrait, TransactionTrait};
+use strum::IntoStaticStr;
 
 async fn erase_maze_field(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
     crate::database::entities::maze_field::Entity::delete_many()
@@ -35,14 +36,20 @@ async fn erase_maze_cell_type(txn: &DatabaseTransaction) -> Result<(), sea_orm::
     Ok(())
 }
 
-pub const DIRECT_CONNECT: &str = "DIRECT_CONNECT";
-pub const INDIRECT_CONNECT: &str = "INDIRECT_CONNECT";
-pub const NOT_CONNECT: &str = "NOT_CONNECT";
-
+#[derive(Debug, PartialEq, strum::Display)]
+pub enum OutsideWallConnectTypeEnum {
+    DIRECT_CONNECT,
+    INDIRECT_CONNECT,
+    NOT_CONNECT,
+}
 async fn initialize_outside_wall_connect_type(
     txn: &DatabaseTransaction,
 ) -> Result<(), sea_orm::DbErr> {
-    let connect_types = vec![DIRECT_CONNECT, INDIRECT_CONNECT, NOT_CONNECT];
+    let connect_types = vec![
+        OutsideWallConnectTypeEnum::DIRECT_CONNECT,
+        OutsideWallConnectTypeEnum::INDIRECT_CONNECT,
+        OutsideWallConnectTypeEnum::NOT_CONNECT,
+    ];
 
     for connect_type in connect_types {
         let new_connect_type = crate::database::entities::outside_wall_connect_type::ActiveModel {
@@ -55,11 +62,14 @@ async fn initialize_outside_wall_connect_type(
     Ok(())
 }
 
-pub const WALL: &str = "WALL";
-pub const PATH: &str = "PATH";
-pub const PILLAR: &str = "PILLAR";
-pub const START: &str = "START";
-pub const END: &str = "END";
+#[derive(Debug, PartialEq, strum::Display)]
+pub enum MazeCellTypeEnum {
+    WALL,
+    PATH,
+    PILLAR,
+    START,
+    END,
+}
 
 async fn initialize_maze_cell(
     txn: &DatabaseTransaction,
@@ -83,7 +93,13 @@ async fn initialize_maze_cell(
 }
 
 async fn initialize_maze_cell_type(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
-    let cell_types = vec![WALL, PATH, PILLAR, START, END];
+    let cell_types = vec![
+        MazeCellTypeEnum::WALL,
+        MazeCellTypeEnum::PATH,
+        MazeCellTypeEnum::PILLAR,
+        MazeCellTypeEnum::START,
+        MazeCellTypeEnum::END,
+    ];
 
     for cell_type in cell_types {
         let new_cell_type = crate::database::entities::maze_cell_type::ActiveModel {
@@ -110,11 +126,11 @@ async fn initialize_maze_field(
         let y = cell.y as u64;
         let new_cell_type: String;
         if x % 2 == 0 && y % 2 == 0 {
-            new_cell_type = PILLAR.to_string();
+            new_cell_type = MazeCellTypeEnum::PILLAR.to_string();
         } else if x == 0 || x == x_max - 1 || y == 0 || y == y_max - 1 {
-            new_cell_type = WALL.to_string();
+            new_cell_type = MazeCellTypeEnum::WALL.to_string();
         } else {
-            new_cell_type = PATH.to_string();
+            new_cell_type = MazeCellTypeEnum::PATH.to_string();
         }
         let new_field = crate::database::entities::maze_field::ActiveModel {
             id: sea_orm::ActiveValue::Set(id),
@@ -178,11 +194,11 @@ mod tests {
 
     #[test]
     fn test_cell_type_constants() {
-        assert_eq!(WALL, "WALL");
-        assert_eq!(PATH, "PATH");
-        assert_eq!(PILLAR, "PILLAR");
-        assert_eq!(START, "START");
-        assert_eq!(END, "END");
+        assert_eq!(MazeCellTypeEnum::WALL.to_string(), "WALL");
+        assert_eq!(MazeCellTypeEnum::PATH.to_string(), "PATH");
+        assert_eq!(MazeCellTypeEnum::PILLAR.to_string(), "PILLAR");
+        assert_eq!(MazeCellTypeEnum::START.to_string(), "START");
+        assert_eq!(MazeCellTypeEnum::END.to_string(), "END");
     }
 
     // Helper function to validate input parameters
@@ -230,11 +246,11 @@ mod tests {
     // Cell position and type logic tests
     fn determine_cell_type(x: u64, y: u64, x_max: u64, y_max: u64) -> String {
         if x % 2 == 0 && y % 2 == 0 {
-            PILLAR.to_string()
+            MazeCellTypeEnum::PILLAR.to_string()
         } else if x == 0 || x == x_max - 1 || y == 0 || y == y_max - 1 {
-            WALL.to_string()
+            MazeCellTypeEnum::WALL.to_string()
         } else {
-            PATH.to_string()
+            MazeCellTypeEnum::PATH.to_string()
         }
     }
 
@@ -242,39 +258,90 @@ mod tests {
     fn test_cell_type_corners() {
         // Corners at even coordinates are PILLAR (not WALL)
         // because the even coordinate check comes first in the logic
-        assert_eq!(determine_cell_type(0, 0, 5, 5), PILLAR);
-        assert_eq!(determine_cell_type(0, 4, 5, 5), PILLAR);
-        assert_eq!(determine_cell_type(4, 0, 5, 5), PILLAR);
-        assert_eq!(determine_cell_type(4, 4, 5, 5), PILLAR);
+        assert_eq!(
+            determine_cell_type(0, 0, 5, 5),
+            MazeCellTypeEnum::PILLAR.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(0, 4, 5, 5),
+            MazeCellTypeEnum::PILLAR.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(4, 0, 5, 5),
+            MazeCellTypeEnum::PILLAR.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(4, 4, 5, 5),
+            MazeCellTypeEnum::PILLAR.to_string()
+        );
     }
 
     #[test]
     fn test_cell_type_edges() {
         // Edges should be WALL (except at even coordinates which would be PILLAR)
-        assert_eq!(determine_cell_type(0, 1, 7, 7), WALL);
-        assert_eq!(determine_cell_type(6, 3, 7, 7), WALL);
-        assert_eq!(determine_cell_type(3, 0, 7, 7), WALL);
-        assert_eq!(determine_cell_type(5, 6, 7, 7), WALL);
+        assert_eq!(
+            determine_cell_type(0, 1, 7, 7),
+            MazeCellTypeEnum::WALL.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(6, 3, 7, 7),
+            MazeCellTypeEnum::WALL.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(3, 0, 7, 7),
+            MazeCellTypeEnum::WALL.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(5, 6, 7, 7),
+            MazeCellTypeEnum::WALL.to_string()
+        );
     }
 
     #[test]
     fn test_cell_type_pillars() {
         // Even coordinates (not on boundary) should be PILLAR
         // But note: on boundaries, WALL takes precedence
-        assert_eq!(determine_cell_type(2, 2, 7, 7), PILLAR);
-        assert_eq!(determine_cell_type(2, 4, 7, 7), PILLAR);
-        assert_eq!(determine_cell_type(4, 2, 7, 7), PILLAR);
-        assert_eq!(determine_cell_type(4, 4, 7, 7), PILLAR);
+        assert_eq!(
+            determine_cell_type(2, 2, 7, 7),
+            MazeCellTypeEnum::PILLAR.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(2, 4, 7, 7),
+            MazeCellTypeEnum::PILLAR.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(4, 2, 7, 7),
+            MazeCellTypeEnum::PILLAR.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(4, 4, 7, 7),
+            MazeCellTypeEnum::PILLAR.to_string()
+        );
     }
 
     #[test]
     fn test_cell_type_paths() {
         // Interior odd coordinates should be PATH
-        assert_eq!(determine_cell_type(1, 1, 7, 7), PATH);
-        assert_eq!(determine_cell_type(3, 3, 7, 7), PATH);
-        assert_eq!(determine_cell_type(1, 3, 7, 7), PATH);
-        assert_eq!(determine_cell_type(3, 1, 7, 7), PATH);
-        assert_eq!(determine_cell_type(5, 5, 7, 7), PATH);
+        assert_eq!(
+            determine_cell_type(1, 1, 7, 7),
+            MazeCellTypeEnum::PATH.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(3, 3, 7, 7),
+            MazeCellTypeEnum::PATH.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(1, 3, 7, 7),
+            MazeCellTypeEnum::PATH.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(3, 1, 7, 7),
+            MazeCellTypeEnum::PATH.to_string()
+        );
+        assert_eq!(
+            determine_cell_type(5, 5, 7, 7),
+            MazeCellTypeEnum::PATH.to_string()
+        );
     }
 
     #[test]

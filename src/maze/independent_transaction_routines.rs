@@ -6,8 +6,15 @@ use sea_orm::{
 };
 
 use crate::{
-    database::initializer::NOT_CONNECT,
-    maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier},
+    database::initializer::OutsideWallConnectTypeEnum,
+    maze::{
+        maze_point::MazePoint,
+        maze_thread_identifier::MazeThreadIdentifier,
+        maze_thread_utility::{
+            get_all_unused_pillars, get_pillar, is_point_outside_wall,
+            select_my_thread_record_from_tx,
+        },
+    },
 };
 
 pub async fn check_extendable_pillar_existance(
@@ -28,7 +35,8 @@ pub async fn check_not_connect_outside_wall_thread_existance(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let not_connect_count: u64 = crate::database::entities::thread_list::Entity::find()
         .filter(
-            crate::database::entities::thread_list::Column::OutsideWallConnectType.eq(NOT_CONNECT),
+            crate::database::entities::thread_list::Column::OutsideWallConnectType
+                .eq(OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()),
         )
         .count(db)
         .await?;
@@ -39,22 +47,15 @@ pub async fn check_not_connect_outside_wall_thread_existance(
     Ok(not_connect_count > 0)
 }
 
-// THREAD_LISTテーブルか自分のスレッドIDに対応するレコードを持ってくる。
+// THREAD_LISTテーブルから自分のスレッドIDに対応するレコードを持ってくる。
 pub async fn select_my_thread_record_from_db(
     db: &DbConn,
     tid: &MazeThreadIdentifier,
 ) -> Result<crate::database::entities::thread_list::Model, Box<dyn std::error::Error>> {
+    let txn = db.begin().await?;
     let thread_record: crate::database::entities::thread_list::Model =
-        crate::database::entities::thread_list::Entity::find()
-            .filter(
-                crate::database::entities::thread_list::Column::ThreadId.eq(tid.thread_id_as_str()),
-            )
-            .filter(
-                crate::database::entities::thread_list::Column::CreateUnixtime.eq(tid.unix_time()),
-            )
-            .one(db)
-            .await?
-            .ok_or("Thread record not found")?;
+        select_my_thread_record_from_tx(&txn, tid).await?;
+    txn.commit().await?;
     Ok(thread_record)
 }
 
@@ -63,35 +64,54 @@ pub async fn select_random_start_point_from_db(
     tid: &MazeThreadIdentifier,
 ) -> Result<MazePoint, Box<dyn std::error::Error>> {
     let txn = db.begin().await?;
+
     // UNUSED_START_POINTS_VIEWを全件取得する。
     let unused_start_points: Vec<crate::database::entities::unused_start_points_view::Model> =
-        crate::database::entities::unused_start_points_view::Entity::find()
-            .all(&txn)
-            .await?;
+        get_all_unused_pillars(&txn).await?;
+
     if unused_start_points.is_empty() {
         return Err("No unused start points available.".into());
     }
+
     // ランダムに1件選択する。
     let mut rng = rand::rng();
     let random_index = rng.random_range(0..unused_start_points.len());
     let selected_point = &unused_start_points[random_index];
+    let selected_cell_id = selected_point.cell_id;
     let x = selected_point.x;
     let y = selected_point.y;
     let tid_str = tid.thread_id_as_str();
     let unix_time = tid.unix_time();
-    // 選択したスタートポイントとMazeThreadIdentifierの内容をADD_NEW_THREADプロシージャを使ってTHERAD_LISTテーブルとMAZE_FIELDテーブルに登録する。
-    let sql = "CALL ADD_NEW_THREAD(?, ?, ?, ?)";
-    txn.execute(Statement::from_sql_and_values(
-        sea_orm::DbBackend::MySql,
-        sql,
-        vec![
-            x.into(),
-            y.into(),
-            tid_str.to_string().into(),
-            unix_time.into(),
-        ],
-    ))
-    .await?;
+
+    let selected_maze_point = MazePoint::new(x, y);
+    let is_outside = is_point_outside_wall(&txn, &selected_maze_point).await;
+
+    let outside_wall_connect_type = if is_outside {
+        OutsideWallConnectTypeEnum::NOT_CONNECT
+    } else {
+        OutsideWallConnectTypeEnum::DIRECT_CONNECT
+    };
+
+    // THREAD_LISTテーブルに新しいスレッドレコードを追加する。
+    // THREAD_ID=tid_str, CREATE_UNIXTIME=unix_time, START_CELL=selected_cell_id, OUTSIDE_WALL_CONNECT_TYPE=outside_wall_connect_type
+    let result = crate::database::entities::thread_list::Entity::insert(
+        crate::database::entities::thread_list::ActiveModel {
+            thread_id: sea_orm::Set(tid_str.to_string()),
+            create_unixtime: sea_orm::Set(unix_time),
+            start_cell: sea_orm::Set(selected_cell_id),
+            outside_wall_connect_type: sea_orm::Set(outside_wall_connect_type.to_string()),
+            ..Default::default()
+        },
+    )
+    .exec(&txn)
+    .await;
+
+    // 追加したスレッドレコードのID列を取得する。
+    let _new_thread_id = result?.last_insert_id;
+
+    // selected_cell_idに当てはまるMAZE_FIELDのCELL_TYPEがPILLARかつCELL_OWNER_THREAD_IDがNullの場合にかぎり、CELL_OWNER_THREAD_IDを_new_thread_idに更新する。
+    let _pillar_update_result = get_pillar(&txn, selected_cell_id, _new_thread_id).await?;
+
     txn.commit().await?;
     Ok(MazePoint::new(x, y))
 }

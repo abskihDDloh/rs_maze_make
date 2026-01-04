@@ -49,7 +49,7 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
 mod tests {
     use std::error::Error;
 
-    use crate::{database::initializer::WALL, maze::maze_thread::maze_thread_function};
+    use crate::{database::initializer::MazeCellTypeEnum::WALL, maze::maze_thread::maze_thread_function};
 
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
@@ -101,7 +101,7 @@ mod tests {
                     .await
                     .expect("Failed to query MAZE_CELL_STATUS_VIEW");
 
-            if !cell.is_empty() && cell[0].cell_type == WALL {
+            if !cell.is_empty() && cell[0].cell_type == WALL.to_string() {
                 wall_found = true;
                 wall_count += 1;
                 eprintln!("Found WALL at ({}, {})", x, y);
