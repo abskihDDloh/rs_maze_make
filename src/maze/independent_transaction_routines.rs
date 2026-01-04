@@ -89,10 +89,15 @@ pub async fn select_random_start_point_from_db(
     let is_outside = is_point_outside_wall(&txn, &selected_maze_point).await;
 
     let outside_wall_connect_type = if is_outside {
-        OutsideWallConnectTypeEnum::NOT_CONNECT
-    } else {
         OutsideWallConnectTypeEnum::DIRECT_CONNECT
+    } else {
+        OutsideWallConnectTypeEnum::NOT_CONNECT
     };
+
+    debug!(
+        "Selected random start point: cell_id={}, x={}, y={}, is_outside_wall={}, outside_wall_connect_type={}",
+        selected_cell_id, x, y, is_outside, outside_wall_connect_type
+    );
 
     // THREAD_LISTテーブルに新しいスレッドレコードを追加する。
     // THREAD_ID=tid_str, CREATE_UNIXTIME=unix_time, START_CELL=selected_cell_id, OUTSIDE_WALL_CONNECT_TYPE=outside_wall_connect_type

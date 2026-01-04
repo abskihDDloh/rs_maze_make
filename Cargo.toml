@@ -3,6 +3,14 @@ name = "rs_maze_maker"
 version = "1.1.2"
 edition = "2024"
 
+[lib]
+name = "rs_maze_maker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rs_maze_maker"
+path = "src/main.rs"
+
 [dependencies]
 log = "0.4.28"
 env_logger = "0.11.8"

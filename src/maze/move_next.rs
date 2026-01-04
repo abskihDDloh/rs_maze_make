@@ -1,3 +1,15 @@
+//! 迷路生成における次の進行地点の選択と経路生成を行うモジュール
+//!
+//! このモジュールは迷路の拡張処理で以下の処理を提供します：
+//!
+//! - 隣接する未使用の拡張可能な柱（開始点）の取得
+//! - 現在位置から次の柱への経路となるセルをWALLに変更
+//!
+//! # 機能
+//!
+//! 迷路の深さ優先探索的な拡張を行う際に、現在の開始点から隣接する未使用の
+//! 開始点を選択し、その間のパス部分を壁に変更します。
+
 use log::{debug, info, warn};
 use rand::Rng;
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
@@ -21,6 +33,27 @@ macro_rules! debug_get_adjacent_extendable_pillar {
     };
 }
 
+/// 現在の柱から隣接する未使用の拡張可能な柱をランダムに選択します。
+///
+/// 距離2の隣接柱候補から未使用で拡張可能な柱を探し、以下の条件を満たす柱を返します：
+///
+/// - UNUSED_START_POINTS_VIEWに存在する（未使用）
+/// - 外壁からのスレッドの場合、外壁開始点でない
+/// - 隣接セル（PATHセル）が未利用で有効
+/// - MAZE_FIELDでセルの所有権を成功裏に取得できる
+///
+/// # 引数
+/// * `txn` - データベーストランザクション
+/// * `tid` - スレッド識別子
+/// * `current_pillar` - 現在の柱の座標
+///
+/// # 戻り値
+/// 選択された隣接柱の座標、またはエラー
+///
+/// # エラー
+/// - 拡張可能な隣接柱がない場合
+/// - セルの所有権取得に失敗した場合
+/// - データベースエラーが発生した場合
 pub async fn get_adjacent_unused_extendable_pillar(
     txn: &DatabaseTransaction,
     tid: &MazeThreadIdentifier,
@@ -33,6 +66,11 @@ pub async fn get_adjacent_unused_extendable_pillar(
     let thread_from_outside_wall = is_this_thread_from_outside_wall(txn, tid).await?;
 
     let adjacent_pillars = current_pillar.generate_adjacent_maze_points(2);
+    debug!(
+        "{} Adjacent pillars candidates: {:?}",
+        debug_get_adjacent_extendable_pillar!(tid, current_pillar, "N/A"),
+        adjacent_pillars
+    );
 
     //UNUSED_START_POINTS_VIEWから、adjacent_pillarsの内容に(X AND Y)が当てはまるレコードをすべて取得する。
     let mut unused_points: Vec<crate::database::entities::unused_start_points_view::Model> =
@@ -146,6 +184,25 @@ pub async fn get_adjacent_unused_extendable_pillar(
     }
 }
 
+/// 2つの柱間の経路セルをWALLに変更します。
+///
+/// 現在の柱から次の柱への間にあるパスセルをWALLセルに変更し、
+/// スレッドの所有権を設定します。
+///
+/// # 引数
+/// * `txn` - データベーストランザクション
+/// * `tid` - スレッド識別子
+/// * `current_pillar` - 現在の柱の座標
+/// * `next_pillar` - 次の柱の座標
+///
+/// # 戻り値
+/// 変更されたセルの座標（中間点）、またはエラー
+///
+/// # エラー
+/// - スレッドレコードが見つからない場合
+/// - 中間地点のセル数が1でない場合（隣接していない座標）
+/// - 中間地点が未使用のPATHセルでない場合
+/// - データベースエラーが発生した場合
 pub async fn path_to_wall(
     txn: &DatabaseTransaction,
     tid: &MazeThreadIdentifier,
@@ -202,154 +259,4 @@ pub async fn path_to_wall(
         .await?;
 
     Ok(path_cell)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::database::entities;
-    use crate::maze::maze_thread_identifier::MazeThreadIdentifier;
-    use crate::{database::entities::used_start_points_view, maze::maze_point::MazePoint};
-    use sea_orm::{
-        ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Statement, TransactionTrait,
-    };
-
-    #[tokio::test]
-    #[test_log::test]
-    #[ignore] // DATABASE_URL が必要なため
-    async fn test_get_adjacent_extendable_pillar_with_used_start_points_view_check() {
-        // DB接続
-        let db = crate::database::connector::establish_connection(None)
-            .await
-            .expect("Failed to connect to database");
-
-        // DB初期化（5x5グリッド）
-        crate::database::initializer::initialize_db(&db, 5, 5)
-            .await
-            .expect("Failed to initialize database");
-
-        // スレッドID生成
-        let tid = MazeThreadIdentifier::new();
-        let tid_str = tid.thread_id_as_str();
-        let unix_time = tid.unix_time();
-
-        // (2,0) を開始点としてADD_NEW_THREADストアドプロシージャで登録
-        let sql = "CALL ADD_NEW_THREAD(?, ?, ?, ?)";
-        db.execute(Statement::from_sql_and_values(
-            sea_orm::DbBackend::MySql,
-            sql,
-            vec![
-                2u64.into(),
-                0u64.into(),
-                tid_str.to_string().into(),
-                unix_time.into(),
-            ],
-        ))
-        .await
-        .expect("Failed to execute ADD_NEW_THREAD");
-
-        // (0,2) を current_pillar として get_adjacent_extendable_pillar をテスト
-        let txn = db.begin().await.expect("Failed to begin transaction");
-        let current_pillar = MazePoint::new(0, 2);
-
-        let result = get_adjacent_unused_extendable_pillar(&txn, &tid, &current_pillar).await;
-        txn.commit().await.expect("Failed to commit transaction");
-        assert!(
-            result.is_ok(),
-            "get_adjacent_extendable_pillar should return Ok, got: {:?}",
-            result
-        );
-
-        // USED_START_POINTS_VIEWに(2,2)のレコードがあるか確認
-        let selected_pillar = match result.unwrap() {
-            p if p.x() == 2 && p.y() == 2 => p,
-            p => panic!(
-                "Expected selected pillar to be (2,2), got ({},{})",
-                p.x(),
-                p.y()
-            ),
-        };
-        let used_points: Vec<used_start_points_view::Model> =
-            entities::used_start_points_view::Entity::find()
-                .filter(
-                    used_start_points_view::Column::X
-                        .eq(selected_pillar.x() as u64)
-                        .and(used_start_points_view::Column::Y.eq(selected_pillar.y() as u64)),
-                )
-                .all(&db)
-                .await
-                .expect("Failed to query USED_START_POINTS_VIEW");
-
-        assert!(
-            !used_points.is_empty(),
-            "USED_START_POINTS_VIEW should contain the (0,2) record"
-        );
-    }
-
-    #[tokio::test]
-    #[ignore] // DATABASE_URL が必要なため
-    async fn test_path_to_wall() {
-        // DB接続
-        let db = crate::database::connector::establish_connection(None)
-            .await
-            .expect("Failed to connect to database");
-
-        // DB初期化（5x5グリッド）
-        crate::database::initializer::initialize_db(&db, 5, 5)
-            .await
-            .expect("Failed to initialize database");
-
-        // スレッドID生成
-        let tid = MazeThreadIdentifier::new();
-        let tid_str = tid.thread_id_as_str();
-        let unix_time = tid.unix_time();
-        // (2,2) を開始点としてADD_NEW_THREADストアドプロシージャで登録
-        let sql = "CALL ADD_NEW_THREAD(?, ?, ?, ?)";
-        db.execute(Statement::from_sql_and_values(
-            sea_orm::DbBackend::MySql,
-            sql,
-            vec![
-                2u64.into(),
-                2u64.into(),
-                tid_str.to_string().into(),
-                unix_time.into(),
-            ],
-        ))
-        .await
-        .expect("Failed to execute ADD_NEW_THREAD");
-
-        // path_to_wallをテスト: current_pillar=(2,2), next_pillar=(0,2)
-        // 中間地点(1,2)が経路から壁に変更されることを確認
-        let txn = db.begin().await.expect("Failed to begin transaction");
-        let current_pillar = MazePoint::new(2, 2);
-        let next_pillar = MazePoint::new(0, 2);
-
-        let result = path_to_wall(&txn, &tid, &current_pillar, &next_pillar).await;
-        txn.commit().await.expect("Failed to commit transaction");
-
-        assert!(
-            result.is_ok(),
-            "path_to_wall should return Ok, got: {:?}",
-            result
-        );
-
-        let wall_cell = result.unwrap();
-        assert_eq!(
-            (wall_cell.x(), wall_cell.y()),
-            (1, 2),
-            "Wall cell should be (1,2)"
-        );
-
-        // MAZE_CELL_STATUS_VIEWで、(1,2)のセルが壁になっているか確認
-        let cell_status: Vec<entities::maze_cell_status_view::Model> =
-            entities::maze_cell_status_view::Entity::find()
-                .filter(
-                    entities::maze_cell_status_view::Column::X
-                        .eq(wall_cell.x() as u64)
-                        .and(entities::maze_cell_status_view::Column::Y.eq(wall_cell.y() as u64)),
-                )
-                .all(&db)
-                .await
-                .expect("Failed to query MAZE_CELL_STATUS_VIEW");
-    }
 }
