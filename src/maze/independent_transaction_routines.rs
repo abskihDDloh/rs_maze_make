@@ -59,6 +59,8 @@ pub async fn select_my_thread_record_from_db(
     Ok(thread_record)
 }
 
+/// 未使用の開始ポイントをランダムに選択し、THREAD_LISTテーブルに新しいスレッドレコードを追加する。
+/// 選択された開始ポイントの座標をMazePointとして返す。
 pub async fn select_random_start_point_from_db(
     db: &DbConn,
     tid: &MazeThreadIdentifier,
@@ -104,10 +106,10 @@ pub async fn select_random_start_point_from_db(
         },
     )
     .exec(&txn)
-    .await;
+    .await?;
 
     // 追加したスレッドレコードのID列を取得する。
-    let _new_thread_id = result?.last_insert_id;
+    let _new_thread_id = result.last_insert_id;
 
     // selected_cell_idに当てはまるMAZE_FIELDのCELL_TYPEがPILLARかつCELL_OWNER_THREAD_IDがNullの場合にかぎり、CELL_OWNER_THREAD_IDを_new_thread_idに更新する。
     let _pillar_update_result = get_pillar(&txn, selected_cell_id, _new_thread_id).await?;
