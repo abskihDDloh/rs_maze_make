@@ -4,7 +4,7 @@ use crate::maze::{
     },
     maze_point::MazePoint,
     maze_thread_identifier::MazeThreadIdentifier,
-    move_next::{ get_adjacent_extendable_pillar, path_to_wall},
+    move_next::{get_adjacent_unused_extendable_pillar, path_to_wall},
 };
 use log::{Level, debug, log_enabled, warn};
 use sea_orm::TransactionTrait;
@@ -39,7 +39,7 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
             );
             let txn = db.begin().await?;
             let result_get_adjacent_pillar =
-                get_adjacent_extendable_pillar(&txn, &tid, &current_pillar).await;
+                get_adjacent_unused_extendable_pillar(&txn, &tid, &current_pillar).await;
         }
     }
     Ok(())

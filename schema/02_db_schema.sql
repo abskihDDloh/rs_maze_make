@@ -134,7 +134,7 @@ DROP TABLE IF EXISTS `START_POINTS_VIEW`;
 SET @saved_cs_client     = @@character_set_client;
 SET character_set_client = utf8mb4;
 /*!50001 CREATE VIEW `START_POINTS_VIEW` AS SELECT
- 1 AS `CELL_ID`,
+ 1 AS `CELL_ID`,let thread_record =
   1 AS `X`,
   1 AS `Y`,
   1 AS `CELL_TYPE` */;
