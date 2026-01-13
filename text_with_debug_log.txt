@@ -1,3 +1,4 @@
 export RUST_LOG=debug
 export RUST_LOG=debug;cargo test test_select_random_start_point_five_times -- --ignored --nocapture
 export RUST_LOG=debug;cargo test test_get_adjacent_unused_extendable_pillar_and_path_to_wall -- --ignored --nocapture
+export RUST_LOG=debug;cargo test test_maze_thread_completes_successfully_with_visualize -- --ignored --nocapture

@@ -30,7 +30,15 @@ impl MazeThreadIdentifier {
             .as_nanos() as i64;
         MazeThreadIdentifier { tid_id, unix_time }
     }
+}
 
+impl Default for MazeThreadIdentifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MazeThreadIdentifier {
     pub fn thread_id(&self) -> thread::ThreadId {
         self.tid_id
     }

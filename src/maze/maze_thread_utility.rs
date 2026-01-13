@@ -10,9 +10,13 @@
 //! - 外壁からのスレッドの判定
 //! - 柱の取得と所有権の更新
 
-use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
+use log::debug;
+use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter};
 
-use crate::maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier};
+use crate::{
+    database::initializer::{MazeCellTypeEnum, OutsideWallConnectTypeEnum},
+    maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier},
+};
 
 /// 指定されたスレッド識別子に対応するスレッドレコードをデータベースから取得します。
 ///
@@ -120,29 +124,27 @@ pub async fn get_cell_status(
     Ok(cell_status)
 }
 
-/// 指定されたスレッドが外壁から開始されたものかどうかを判定します。
+/// 指定されたスレッドが外壁に接触しているものかどうかを判定します。
 ///
 /// # 引数
 /// * `txn` - データベーストランザクション
 /// * `tid` - チェックするスレッドの識別子
 ///
 /// # 戻り値
-/// 外壁からのスレッドの場合は`true`、そうでない場合は`false`、またはエラー
-pub async fn is_this_thread_from_outside_wall(
+/// 外壁に直接的もしくは間接的に接触しているスレッドの場合は`true`、そうでない場合は`false`、またはエラー
+pub async fn is_this_thread_connect_outside_wall(
     txn: &DatabaseTransaction,
     tid: &MazeThreadIdentifier,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    // THREAD_FROM_OUTSIDE_WALL_VIEWから、MazeThreadIdentifierの内容に当てはまるレコードを取得する。
-    let thread_from_outside_wall_view_records: Vec<
-        crate::database::entities::thread_from_outside_wall_view::Model,
-    > = crate::database::entities::thread_from_outside_wall_view::Entity::find()
-        .filter(
-            crate::database::entities::thread_from_outside_wall_view::Column::Tid
-                .eq(tid.thread_id_as_str()),
-        )
-        .all(txn)
-        .await?;
-    Ok(!thread_from_outside_wall_view_records.is_empty())
+    // THREAD_LISTから、MazeThreadIdentifierの内容に当てはまるレコードを取得する。
+    let thread_record = select_my_thread_record_from_tx(txn, tid).await?;
+    if thread_record.outside_wall_connect_type
+        == OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()
+    {
+        return Ok(false);
+    } else {
+        return Ok(true);
+    }
 }
 
 /// 指定された座標が外壁の開始点かどうかを判定します。
@@ -192,26 +194,40 @@ pub async fn get_pillar(
     cell_id: u64,
     thread_id: u64,
 ) -> Result<crate::database::entities::maze_field::Model, Box<dyn std::error::Error>> {
-    let update_model = crate::database::entities::maze_field::ActiveModel {
-        id: sea_orm::ActiveValue::Set(cell_id),
-        cell_owner_thread_id: sea_orm::ActiveValue::Set(Some(thread_id)),
-        ..Default::default()
-    };
-    let result = crate::database::entities::maze_field::Entity::update(update_model)
-        .filter(
-            crate::database::entities::maze_field::Column::Id
-                .eq(cell_id)
-                .and(
-                    crate::database::entities::maze_field::Column::CellType
-                        .eq(crate::database::initializer::MazeCellTypeEnum::PILLAR.to_string()),
-                )
-                .and(crate::database::entities::maze_field::Column::CellOwnerThreadId.is_null()),
-        )
+    debug!(
+        "Attempting to acquire pillar cell_id={} for thread_id={}",
+        cell_id, thread_id
+    );
+    // MAZE_FIELDのセルIDがcell_idであるレコードを取得する。
+    let pillar_record: crate::database::entities::maze_field::Model =
+        crate::database::entities::maze_field::Entity::find()
+            .filter(
+                crate::database::entities::maze_field::Column::Id
+                    .eq(cell_id)
+                    .and(
+                        crate::database::entities::maze_field::Column::CellType
+                            .eq("PILLAR")
+                            .and(
+                                crate::database::entities::maze_field::Column::CellOwnerThreadId
+                                    .is_null(),
+                            ),
+                    ),
+            )
+            .one(txn)
+            .await?
+            .ok_or(format!(
+                "Pillar not found or already owned. cell_id={}",
+                cell_id
+            ))?;
+    // CELL_OWNER_THREAD_IDをthread_idに更新する。
+    let mut active_pillar = pillar_record.clone().into_active_model();
+    active_pillar.cell_owner_thread_id = sea_orm::Set(Some(thread_id));
+    let updated_record = crate::database::entities::maze_field::Entity::update(active_pillar)
         .exec(txn)
         .await?;
-    let updated_record = crate::database::entities::maze_field::Entity::find_by_id(cell_id)
-        .one(txn)
-        .await?
-        .ok_or("Updated record not found.")?;
+    debug!(
+        "Pillar cell_id={} ownership updated to thread_id={}",
+        cell_id, thread_id
+    );
     Ok(updated_record)
 }

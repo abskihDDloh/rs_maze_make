@@ -120,6 +120,15 @@ pub async fn select_random_start_point_from_db(
     let _pillar_update_result = get_pillar(&txn, selected_cell_id, _new_thread_id).await?;
 
     txn.commit().await?;
+    debug!(
+        "Inserted new thread record with ID={}, THREAD_ID={}, CREATE_UNIXTIME={}, START_CELL={}, OUTSIDE_WALL_CONNECT_TYPE={}, Pillar update result={:?}",
+        _new_thread_id,
+        tid_str,
+        unix_time,
+        selected_cell_id,
+        outside_wall_connect_type,
+        _pillar_update_result
+    );
     Ok(MazePoint::new(x, y))
 }
 

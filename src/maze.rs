@@ -1,6 +1,7 @@
-pub mod independent_transaction_routines;
-pub mod maze_point;
+mod independent_transaction_routines;
+mod maze_point;
 pub mod maze_thread;
-pub mod maze_thread_identifier;
-pub mod maze_thread_utility;
-pub mod move_next;
+mod maze_thread_identifier;
+mod maze_thread_utility;
+mod move_next;
+mod connect_to_outside_wall;

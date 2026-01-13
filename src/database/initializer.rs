@@ -416,7 +416,7 @@ mod tests {
 
         eprintln!("Verifying maze_cell count...");
         let cell_count = crate::database::entities::maze_cell::Entity::find()
-            .count(&db)
+            .count(db.as_ref())
             .await
             .expect("Failed to count maze cells");
         eprintln!("Found {} maze cells", cell_count);
@@ -429,7 +429,7 @@ mod tests {
 
         eprintln!("Verifying maze_field count...");
         let field_count = crate::database::entities::maze_field::Entity::find()
-            .count(&db)
+            .count(db.as_ref())
             .await
             .expect("Failed to count maze fields");
         eprintln!("Found {} maze fields", field_count);
@@ -442,7 +442,7 @@ mod tests {
 
         eprintln!("Verifying maze_cell_type count...");
         let types = crate::database::entities::maze_cell_type::Entity::find()
-            .all(&db)
+            .all(db.as_ref())
             .await
             .expect("Failed to fetch cell types");
         eprintln!("Found {} cell types", types.len());

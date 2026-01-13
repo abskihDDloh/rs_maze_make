@@ -1,9 +1,9 @@
-use std::{env, time::Duration};
+use std::{env, sync::Arc, time::Duration};
 
 use dotenv::dotenv;
 use sea_orm::{ConnectOptions, Database, DbConn, DbErr};
 
-pub async fn establish_connection(max_connections: Option<u32>) -> Result<DbConn, DbErr> {
+pub async fn establish_connection(max_connections: Option<u32>) -> Result<Arc<DbConn>, DbErr> {
     dotenv().ok();
 
     let url = env::var("DATABASE_URL").expect("DATABASE_URL is not found.");
@@ -19,7 +19,7 @@ pub async fn establish_connection(max_connections: Option<u32>) -> Result<DbConn
         .sqlx_logging_level(log::LevelFilter::Info);
 
     //  DB接続のためのコネクションを生成
-    Database::connect(opt).await
+    Database::connect(opt).await.map(Arc::new)
 }
 
 #[cfg(test)]

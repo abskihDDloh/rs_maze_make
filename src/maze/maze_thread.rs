@@ -6,7 +6,7 @@ use crate::maze::{
     maze_thread_identifier::MazeThreadIdentifier,
     move_next::{get_adjacent_unused_extendable_pillar, path_to_wall},
 };
-use log::{Level, debug, info, log_enabled, warn};
+use log::{debug, info, warn};
 use sea_orm::TransactionTrait;
 
 macro_rules! debug_maze_state {
@@ -21,86 +21,86 @@ macro_rules! debug_maze_state {
 pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn std::error::Error>> {
     let tid = MazeThreadIdentifier::new();
     // 未使用のスタートポイントがある場合のループ。
+
+    let mut maze_stack: Vec<MazePoint> = Vec::new();
+    maze_stack.push(select_random_start_point_from_db(db, &tid).await?);
     loop {
         if !check_extendable_pillar_existance(db).await? {
             debug!("check_extendable_pillar_existance() = false break.");
             break;
         }
-        let mut maze_stack: Vec<MazePoint> = Vec::new();
-        maze_stack.push(select_random_start_point_from_db(db, &tid).await?);
-        loop {
-            if !check_extendable_pillar_existance(db).await? {
-                debug!("check_extendable_pillar_existance() = false break.");
+        let current_pillar = match maze_stack.last() {
+            Some(p) => *p,
+            None => {
+                warn!(
+                    "Maze stack is empty, breaking inner loop. {}",
+                    debug_maze_state!(maze_stack, "None", &tid)
+                );
                 break;
             }
-            let current_pillar = match maze_stack.last() {
-                Some(p) => *p,
-                None => {
-                    warn!(
-                        "Maze stack is empty, breaking inner loop. {}",
-                        debug_maze_state!(maze_stack, "None", &tid)
-                    );
-                    break;
-                }
-            };
-            debug!(
-                "Loop start. {}",
-                debug_maze_state!(maze_stack, Some(current_pillar), &tid)
-            );
-            let txn_unused_point = db.begin().await?;
-            let next_pillar_result =
-                get_adjacent_unused_extendable_pillar(&txn_unused_point, &tid, &current_pillar)
-                    .await;
-            // エラーがあった場合はcontinueで再試行
-            let next_pillar = match next_pillar_result {
-                Ok(p) => p,
-                Err(e) => {
-                    warn!(
-                        "get_adjacent_unused_extendable_pillar() error. Pop current pillar and retry. : {:?}. {}",
-                        e,
-                        debug_maze_state!(maze_stack, Some(current_pillar), &tid)
-                    );
-                    maze_stack.pop();
-                    txn_unused_point.rollback().await?;
-                    continue;
-                }
-            };
-            let result_to_wall =
-                path_to_wall(&txn_unused_point, &tid, &current_pillar, &next_pillar).await;
-            // エラーがあった場合はcontinueで再試行
-            match result_to_wall {
-                Ok(_) => {}
-                Err(e) => {
-                    warn!(
-                        "path_to_wall() error. Pop current pillar and retry. : {:?}. {}",
-                        e,
-                        debug_maze_state!(maze_stack, Some(current_pillar), &tid)
-                    );
-                    maze_stack.pop();
-                    txn_unused_point.rollback().await?;
-                    continue;
-                }
-            };
-            maze_stack.push(next_pillar);
-            txn_unused_point.commit().await?;
-        }
+        };
+        debug!(
+            "Loop start. {}",
+            debug_maze_state!(maze_stack, Some(current_pillar), &tid)
+        );
+        let txn_unused_point = db.begin().await?;
+        let next_pillar_result =
+            get_adjacent_unused_extendable_pillar(&txn_unused_point, &tid, &current_pillar).await;
+        // エラーがあった場合はcontinueで再試行
+        let next_pillar = match next_pillar_result {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(
+                    "get_adjacent_unused_extendable_pillar() error. Pop current pillar and retry. : {:?}. {}",
+                    e,
+                    debug_maze_state!(maze_stack, Some(current_pillar), &tid)
+                );
+                maze_stack.pop();
+                txn_unused_point.rollback().await?;
+                continue;
+            }
+        };
+        let result_to_wall =
+            path_to_wall(&txn_unused_point, &tid, &current_pillar, &next_pillar).await;
+        // エラーがあった場合はcontinueで再試行
+        match result_to_wall {
+            Ok(_) => {}
+            Err(e) => {
+                warn!(
+                    "path_to_wall() error. Pop current pillar and retry. : {:?}. {}",
+                    e,
+                    debug_maze_state!(maze_stack, Some(current_pillar), &tid)
+                );
+                maze_stack.pop();
+                txn_unused_point.rollback().await?;
+                continue;
+            }
+        };
+        maze_stack.push(next_pillar);
+        txn_unused_point.commit().await?;
     }
 
-    let txn_check_outside_thread = db.begin().await?;
-    let is_from_outside = crate::maze::maze_thread_utility::is_this_thread_from_outside_wall(
-        &txn_check_outside_thread,
-        &tid,
-    )
-    .await?;
-    txn_check_outside_thread.commit().await?;
-    if is_from_outside {
-        info!(
-            "Thread {:?} did start from outside wall, restarting maze thread.",
-            &tid
-        );
-        return Ok(());
+    loop {
+        // このスレッドの作った壁がすでに外壁に接続している場合はループを抜ける。
+        let txn_check_outside_thread = db.begin().await?;
+        let is_from_outside =
+            crate::maze::maze_thread_utility::is_this_thread_connect_outside_wall(
+                &txn_check_outside_thread,
+                &tid,
+            )
+            .await?;
+        txn_check_outside_thread.commit().await?;
+        if is_from_outside {
+            info!(
+                "Thread {:?} did start from outside wall, restarting maze thread.",
+                &tid
+            );
+            break;
+        }
+        loop {
+            break;
+        }
     }
-    // スレッドが外壁から開始されていない場合は、外壁のスレッドが作った壁に接続する。
     Ok(())
 }
 #[cfg(test)]
@@ -133,7 +133,7 @@ mod tests {
 
         // 条件A: UNUSED_START_POINTS_VIEW が 0 件であること
         let unused_count: u64 = crate::database::entities::unused_start_points_view::Entity::find()
-            .all(&db)
+            .all(db.as_ref())
             .await
             .expect("Failed to count unused start points")
             .len() as u64;
@@ -157,7 +157,7 @@ mod tests {
                                 crate::database::entities::maze_cell_status_view::Column::Y.eq(*y),
                             ),
                     )
-                    .all(&db)
+                    .all(db.as_ref())
                     .await
                     .expect("Failed to query MAZE_CELL_STATUS_VIEW");
 
@@ -191,7 +191,7 @@ mod tests {
                                 crate::database::entities::maze_cell_status_view::Column::Y.eq(*y),
                             ),
                     )
-                    .all(&db)
+                    .all(db.as_ref())
                     .await
                     .expect("Failed to query MAZE_CELL_STATUS_VIEW");
 
