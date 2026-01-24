@@ -30,7 +30,7 @@ CREATE TABLE `MAZE_CELL` (
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_CELL` (`X`,`Y`) USING BTREE,
   UNIQUE KEY `UNIQUE_ALL` (`ID`,`X`,`Y`)
-) ENGINE=InnoDB AUTO_INCREMENT=2547 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=117721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -46,6 +46,25 @@ SET character_set_client = utf8mb4;
   1 AS `min_x`,
   1 AS `max_y`,
   1 AS `min_y` */;
+SET character_set_client = @saved_cs_client;
+
+--
+-- Temporary table structure for view `MAZE_CELL_OWNER_VIEW`
+--
+
+DROP TABLE IF EXISTS `MAZE_CELL_OWNER_VIEW`;
+/*!50001 DROP VIEW IF EXISTS `MAZE_CELL_OWNER_VIEW`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8mb4;
+/*!50001 CREATE VIEW `MAZE_CELL_OWNER_VIEW` AS SELECT
+ 1 AS `CELL_ID`,
+  1 AS `X`,
+  1 AS `Y`,
+  1 AS `CELL_TYPE`,
+  1 AS `CELL_OWNER_THREAD_ID`,
+  1 AS `THREAD_ID`,
+  1 AS `CREATE_UNIXTIME`,
+  1 AS `OUTSIDE_WALL_CONNECT_TYPE` */;
 SET character_set_client = @saved_cs_client;
 
 --
@@ -197,7 +216,7 @@ CREATE TABLE `THREAD_LIST` (
   KEY `FK_OUTSIDE_WALL_CONNECT` (`OUTSIDE_WALL_CONNECT_TYPE`),
   CONSTRAINT `FK_OUTSIDE_WALL_CONNECT` FOREIGN KEY (`OUTSIDE_WALL_CONNECT_TYPE`) REFERENCES `OUTSIDE_WALL_CONNECT_TYPE` (`TYPE`),
   CONSTRAINT `FK_START_CELL` FOREIGN KEY (`START_CELL`) REFERENCES `MAZE_CELL` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=240 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=564 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -271,6 +290,24 @@ SET character_set_client = @saved_cs_client;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
 /*!50001 VIEW `MAZE_CELL_MIN_MAX_VIEW` AS select max(`MAZE_CELL`.`X`) AS `max_x`,min(`MAZE_CELL`.`X`) AS `min_x`,max(`MAZE_CELL`.`Y`) AS `max_y`,min(`MAZE_CELL`.`Y`) AS `min_y` from `MAZE_CELL` */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
+-- Final view structure for view `MAZE_CELL_OWNER_VIEW`
+--
+
+/*!50001 DROP VIEW IF EXISTS `MAZE_CELL_OWNER_VIEW`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
+/*!50001 VIEW `MAZE_CELL_OWNER_VIEW` AS select `MAZE_CELL_STATUS_VIEW`.`CELL_ID` AS `CELL_ID`,`MAZE_CELL_STATUS_VIEW`.`X` AS `X`,`MAZE_CELL_STATUS_VIEW`.`Y` AS `Y`,`MAZE_CELL_STATUS_VIEW`.`CELL_TYPE` AS `CELL_TYPE`,`MAZE_CELL_STATUS_VIEW`.`CELL_OWNER_THREAD_ID` AS `CELL_OWNER_THREAD_ID`,`THREAD_LIST`.`THREAD_ID` AS `THREAD_ID`,`THREAD_LIST`.`CREATE_UNIXTIME` AS `CREATE_UNIXTIME`,`THREAD_LIST`.`OUTSIDE_WALL_CONNECT_TYPE` AS `OUTSIDE_WALL_CONNECT_TYPE` from (`MAZE_CELL_STATUS_VIEW` join `THREAD_LIST` on(`MAZE_CELL_STATUS_VIEW`.`CELL_OWNER_THREAD_ID` = `THREAD_LIST`.`ID`)) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -428,4 +465,4 @@ SET character_set_client = @saved_cs_client;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-04 15:46:23
+-- Dump completed on 2026-01-24 11:45:57

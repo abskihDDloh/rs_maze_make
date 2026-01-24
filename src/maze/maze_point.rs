@@ -13,7 +13,7 @@ impl MazePoint {
         MazePoint { x: 0, y: 0 }
     }
 
-    pub  fn new(x: u64, y: u64) -> Self {
+    pub fn new(x: u64, y: u64) -> Self {
         MazePoint { x, y }
     }
 
@@ -24,7 +24,7 @@ impl MazePoint {
     /// # 戻り値
     ///
     /// X座標値（0以上のu64値）
-    pub  fn x(&self) -> u64 {
+    pub fn x(&self) -> u64 {
         self.x
     }
 
@@ -35,11 +35,11 @@ impl MazePoint {
     /// # 戻り値
     ///
     /// Y座標値（0以上のu64値）
-    pub  fn y(&self) -> u64 {
+    pub fn y(&self) -> u64 {
         self.y
     }
 
-    pub  fn generate_adjacent_maze_points(&self, distance: u64) -> Vec<MazePoint> {
+    pub fn generate_adjacent_maze_points(&self, distance: u64) -> Vec<MazePoint> {
         // 上下左右に指定された距離だけ離れた位置を生成
         // オーバーフローの場合は最大値、アンダーフローの場合は最小値
         let mut points = HashSet::from([
@@ -116,6 +116,23 @@ mod tests {
         assert_eq!(adjacent_set, expected);
     }
 
+    //generate_adjacent_maze_points(2)の場合のテスト。
+    #[test]
+    fn generate_adjacent_distance_two() {
+        let point = MazePoint::new(2, 3);
+
+        let adjacent = point.generate_adjacent_maze_points(2);
+        let adjacent_set: HashSet<_> = adjacent.into_iter().collect();
+
+        let expected = HashSet::from([
+            MazePoint::new(0, 3),
+            MazePoint::new(4, 3),
+            MazePoint::new(2, 1),
+            MazePoint::new(2, 5),
+        ]);
+
+        assert_eq!(adjacent_set, expected);
+    }
     #[test]
     fn generate_adjacent_saturates_and_excludes_self() {
         let origin = MazePoint::new(0, 0);

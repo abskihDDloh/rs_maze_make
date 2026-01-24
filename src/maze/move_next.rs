@@ -105,7 +105,7 @@ pub async fn get_adjacent_unused_extendable_pillar(
             is_point_outside_wall(txn, &MazePoint::new(selected_point.x, selected_point.y)).await;
 
         // OUTSIDE_WALL_START_POINTS_VIEWに、選択した要素の(X AND Y)が当てはまるレコードが存在するか確認する。
-        if thread_from_outside_wall && is_outside_wall_start_point {
+        if thread_from_outside_wall.0 && is_outside_wall_start_point {
             // 外壁から来た壁は外壁にはゆかないようにする。
             info!(
                 "{} this thread start from outside wall. Selected pillar is outside wall start point, skipping: {:?}",
@@ -135,9 +135,8 @@ pub async fn get_adjacent_unused_extendable_pillar(
         let adjacent_cell_status = get_cell_status(txn, &adjacent_cells_candidate).await?;
 
         // 取得したレコードが未利用のPATHでなければ次の候補へ
-        if adjacent_cell_status.is_empty()
-            || adjacent_cell_status[0].cell_type != MazeCellTypeEnum::PATH.to_string()
-            || adjacent_cell_status[0].cell_owner_thread_id.is_some()
+        if adjacent_cell_status.cell_type != MazeCellTypeEnum::PATH.to_string()
+            || adjacent_cell_status.cell_owner_thread_id.is_some()
         {
             warn!(
                 "Adjacent cell is not PATH: current_pillar=({},{}) selected_point=({},{}) adjacent_cell=({},{}) status={:?}",
@@ -169,8 +168,8 @@ pub async fn get_adjacent_unused_extendable_pillar(
             && thread_record.outside_wall_connect_type
                 == OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()
         {
-            let update_model = crate::database::entities::thread_list::ActiveModel {
-                id: sea_orm::ActiveValue::Set(thread_record.id),
+            let mut update_model = crate::database::entities::thread_list::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(thread_record.id),
                 outside_wall_connect_type: sea_orm::ActiveValue::Set(
                     OutsideWallConnectTypeEnum::DIRECT_CONNECT.to_string(),
                 ),
@@ -228,9 +227,8 @@ pub async fn path_to_wall(
     let path_cell = bitween_cells[0];
     // 取得したレコードが未利用のPATHでなければエラー。
     let cell_status = get_cell_status(txn, &path_cell).await?;
-    if cell_status.is_empty()
-        || cell_status[0].cell_type != MazeCellTypeEnum::PATH.to_string()
-        || cell_status[0].cell_owner_thread_id.is_some()
+    if cell_status.cell_type != MazeCellTypeEnum::PATH.to_string()
+        || cell_status.cell_owner_thread_id.is_some()
     {
         return Err(format!("Between cell is not unused PATH: current_pillar=({},{}) next_pillar=({},{}) between_cell=({},{}) status={:?}",
         current_pillar.x(),
@@ -245,7 +243,7 @@ pub async fn path_to_wall(
 
     // MAZE_FIELDのIDがcell_statusから取得したIDで、CELL_OWNER_THREAD_IDがNullで、CELL_TYPEがPATHの場合に限り、該当するレコードののCELL_TYPEをPATHからWALLに変更し、CELL_OWNER_THREAD_IDにthread_record.idを設定する。
     let update_model = crate::database::entities::maze_field::ActiveModel {
-        id: sea_orm::ActiveValue::Set(cell_status[0].cell_id),
+        id: sea_orm::ActiveValue::Unchanged(cell_status.cell_id),
         cell_type: sea_orm::ActiveValue::Set(MazeCellTypeEnum::WALL.to_string()),
         cell_owner_thread_id: sea_orm::ActiveValue::Set(Some(thread_id_from_table)),
         ..Default::default()
@@ -258,7 +256,7 @@ pub async fn path_to_wall(
                     crate::database::entities::maze_field::Column::CellType
                         .eq(MazeCellTypeEnum::PATH.to_string()),
                 )
-                .and(crate::database::entities::maze_field::Column::Id.eq(cell_status[0].cell_id)),
+                .and(crate::database::entities::maze_field::Column::Id.eq(cell_status.cell_id)),
         )
         .exec(txn)
         .await?;

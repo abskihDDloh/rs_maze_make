@@ -99,6 +99,32 @@ pub async fn check_unused_pillars(
     Ok(unused_points)
 }
 
+/// 指定された使用中セルのステータス情報を取得します。
+///
+/// # 引数
+/// * `txn` - データベーストランザクション
+/// * `cell` - ステータスを取得するセルの座標
+/// # 戻り値
+/// 使用中セルの所有者ビューのモデル、またはエラー
+pub async fn get_used_cell_status(
+    txn: &DatabaseTransaction,
+    cell: &MazePoint,
+) -> Result<crate::database::entities::maze_cell_owner_view::Model, Box<dyn std::error::Error>> {
+    let used_cell_status: Vec<crate::database::entities::maze_cell_owner_view::Model> =
+        crate::database::entities::maze_cell_owner_view::Entity::find()
+            .filter(
+                crate::database::entities::maze_cell_owner_view::Column::X
+                    .eq(cell.x())
+                    .and(crate::database::entities::maze_cell_owner_view::Column::Y.eq(cell.y())),
+            )
+            .all(txn)
+            .await?;
+    Ok(used_cell_status
+        .into_iter()
+        .next()
+        .ok_or("Cell owner status not found")?)
+}
+
 /// 指定されたセルのステータス情報を取得します。
 ///
 /// # 引数
@@ -106,12 +132,11 @@ pub async fn check_unused_pillars(
 /// * `cell` - ステータスを取得するセルの座標
 ///
 /// # 戻り値
-/// セルステータスビューのモデルのベクタ、またはエラー
+/// セルステータスビューのモデル、またはエラー
 pub async fn get_cell_status(
     txn: &DatabaseTransaction,
     cell: &MazePoint,
-) -> Result<Vec<crate::database::entities::maze_cell_status_view::Model>, Box<dyn std::error::Error>>
-{
+) -> Result<crate::database::entities::maze_cell_status_view::Model, Box<dyn std::error::Error>> {
     let cell_status: Vec<crate::database::entities::maze_cell_status_view::Model> =
         crate::database::entities::maze_cell_status_view::Entity::find()
             .filter(
@@ -121,7 +146,10 @@ pub async fn get_cell_status(
             )
             .all(txn)
             .await?;
-    Ok(cell_status)
+    Ok(cell_status
+        .into_iter()
+        .next()
+        .ok_or("Cell status not found")?)
 }
 
 /// 指定されたスレッドが外壁に接触しているものかどうかを判定します。
@@ -131,19 +159,19 @@ pub async fn get_cell_status(
 /// * `tid` - チェックするスレッドの識別子
 ///
 /// # 戻り値
-/// 外壁に直接的もしくは間接的に接触しているスレッドの場合は`true`、そうでない場合は`false`、またはエラー
+/// 外壁に接触している場合は`true`、そうでない場合は`false`とスレッドID
 pub async fn is_this_thread_connect_outside_wall(
     txn: &DatabaseTransaction,
     tid: &MazeThreadIdentifier,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> Result<(bool, u64), Box<dyn std::error::Error>> {
     // THREAD_LISTから、MazeThreadIdentifierの内容に当てはまるレコードを取得する。
     let thread_record = select_my_thread_record_from_tx(txn, tid).await?;
     if thread_record.outside_wall_connect_type
         == OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()
     {
-        return Ok(false);
+        return Ok((false, thread_record.id));
     } else {
-        return Ok(true);
+        return Ok((true, thread_record.id));
     }
 }
 

@@ -2,6 +2,7 @@ pub mod prelude;
 
 pub mod maze_cell;
 pub mod maze_cell_min_max_view;
+pub mod maze_cell_owner_view;
 pub mod maze_cell_status_view;
 pub mod maze_cell_type;
 pub mod maze_field;
