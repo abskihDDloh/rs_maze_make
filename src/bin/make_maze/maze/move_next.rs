@@ -12,17 +12,22 @@
 
 use log::{debug, info, warn};
 use rand::Rng;
+use rs_maze_maker::common::maze_point::select_between_points_without_edge;
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
 extern crate strum;
-
-use crate::database::initializer::{MazeCellTypeEnum, OutsideWallConnectTypeEnum};
-use crate::maze::maze_point::select_between_points_without_edge;
 
 use crate::maze::maze_thread_utility::{
     check_unused_pillars, get_cell_status, get_pillar, is_point_outside_wall,
     is_this_thread_connect_outside_wall, select_my_thread_record_from_tx,
 };
-use crate::maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier};
+
+use rs_maze_maker::common::database::entities::maze_field;
+use rs_maze_maker::common::database::entities::thread_list;
+use rs_maze_maker::common::database::entities::unused_start_points_view;
+use rs_maze_maker::common::database::initializer::MazeCellTypeEnum;
+use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
+use rs_maze_maker::common::maze_point::MazePoint;
+use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 
 macro_rules! debug_get_adjacent_extendable_pillar {
     ($tid:expr, $current_pillar:expr, $unused_points:expr) => {
@@ -73,7 +78,7 @@ pub async fn get_adjacent_unused_extendable_pillar(
     );
 
     //UNUSED_START_POINTS_VIEWから、adjacent_pillarsの内容に(X AND Y)が当てはまるレコードをすべて取得する。
-    let mut unused_points: Vec<crate::database::entities::unused_start_points_view::Model> =
+    let mut unused_points: Vec<unused_start_points_view::Model> =
         check_unused_pillars(txn, &adjacent_pillars).await?;
 
     loop {
@@ -168,16 +173,14 @@ pub async fn get_adjacent_unused_extendable_pillar(
             && thread_record.outside_wall_connect_type
                 == OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()
         {
-            let mut update_model = crate::database::entities::thread_list::ActiveModel {
+            let mut update_model = thread_list::ActiveModel {
                 id: sea_orm::ActiveValue::Unchanged(thread_record.id),
                 outside_wall_connect_type: sea_orm::ActiveValue::Set(
                     OutsideWallConnectTypeEnum::DIRECT_CONNECT.to_string(),
                 ),
                 ..Default::default()
             };
-            crate::database::entities::thread_list::Entity::update(update_model)
-                .exec(txn)
-                .await?;
+            thread_list::Entity::update(update_model).exec(txn).await?;
             debug!(
                 "{} Selected_pillar: {:?}, thread_record.outside_wall_connect_type will be updated to DIRECT_CONNECT",
                 debug_get_adjacent_extendable_pillar!(tid, current_pillar, unused_points),
@@ -242,21 +245,18 @@ pub async fn path_to_wall(
     }
 
     // MAZE_FIELDのIDがcell_statusから取得したIDで、CELL_OWNER_THREAD_IDがNullで、CELL_TYPEがPATHの場合に限り、該当するレコードののCELL_TYPEをPATHからWALLに変更し、CELL_OWNER_THREAD_IDにthread_record.idを設定する。
-    let update_model = crate::database::entities::maze_field::ActiveModel {
+    let update_model = maze_field::ActiveModel {
         id: sea_orm::ActiveValue::Unchanged(cell_status.cell_id),
         cell_type: sea_orm::ActiveValue::Set(MazeCellTypeEnum::WALL.to_string()),
         cell_owner_thread_id: sea_orm::ActiveValue::Set(Some(thread_id_from_table)),
         ..Default::default()
     };
-    let result = crate::database::entities::maze_field::Entity::update(update_model)
+    let result = maze_field::Entity::update(update_model)
         .filter(
-            crate::database::entities::maze_field::Column::CellOwnerThreadId
+            maze_field::Column::CellOwnerThreadId
                 .is_null()
-                .and(
-                    crate::database::entities::maze_field::Column::CellType
-                        .eq(MazeCellTypeEnum::PATH.to_string()),
-                )
-                .and(crate::database::entities::maze_field::Column::Id.eq(cell_status.cell_id)),
+                .and(maze_field::Column::CellType.eq(MazeCellTypeEnum::PATH.to_string()))
+                .and(maze_field::Column::Id.eq(cell_status.cell_id)),
         )
         .exec(txn)
         .await?;
@@ -311,10 +311,19 @@ mod tests {
     //! - MySQL接続タイムアウトを確認（デフォルト8秒）
 
     use log::info;
+    use rs_maze_maker::common::database::initializer::MazeCellTypeEnum;
+    use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
     use sea_orm::EntityTrait;
     use sea_orm::TransactionTrait;
 
-    use crate::database;
+    use rs_maze_maker::common::database::entities::maze_cell_status_view;
+    use rs_maze_maker::common::database::entities::used_start_points_view;
+    use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
+    use rs_maze_maker::common::database::{
+        connector::establish_connection, initializer::initialize_db,
+    };
+
+    use crate::maze::move_next::get_adjacent_unused_extendable_pillar;
 
     #[tokio::test]
     #[test_log::test]
@@ -326,7 +335,7 @@ mod tests {
 
         // DB接続を確立
         info!("Attempting to connect to database...");
-        let db = match crate::database::connector::establish_connection(None).await {
+        let db = match establish_connection(None).await {
             Ok(conn) => {
                 info!("✓ Database connection established");
                 conn
@@ -350,11 +359,11 @@ mod tests {
 
         // 1. initialize_db()で、5x5でDBを初期化する。
         info!("Step 1: Initializing database with 5x5 grid");
-        crate::database::initializer::initialize_db(&db, 5, 5).await?;
+        initialize_db(&db, 5, 5).await?;
 
         // 2. MAZE_CELL_STATUS_VIEWの内容をinfo!でログ出力する。
         info!("Step 2: Logging MAZE_CELL_STATUS_VIEW after initialization");
-        let cell_statuses = crate::database::entities::maze_cell_status_view::Entity::find()
+        let cell_statuses = maze_cell_status_view::Entity::find()
             .all(db.as_ref())
             .await?;
         for status in &cell_statuses {
@@ -366,7 +375,7 @@ mod tests {
 
         // 3. select_random_start_point_from_db()で、開始点を取得する。(開始点A)
         info!("Step 3: Selecting random start point A");
-        let tid_a = crate::maze::maze_thread_identifier::MazeThreadIdentifier::new();
+        let tid_a = MazeThreadIdentifier::new();
         let start_point_a =
             crate::maze::independent_transaction_routines::select_random_start_point_from_db(
                 &db, &tid_a,
@@ -380,7 +389,7 @@ mod tests {
 
         // 4. MAZE_CELL_STATUS_VIEWの内容をinfo!でログ出力する。
         info!("Step 4: Logging MAZE_CELL_STATUS_VIEW after selecting start point A");
-        let cell_statuses = crate::database::entities::maze_cell_status_view::Entity::find()
+        let cell_statuses = maze_cell_status_view::Entity::find()
             .all(db.as_ref())
             .await?;
         for status in &cell_statuses {
@@ -392,7 +401,7 @@ mod tests {
 
         // 5. USED_START_POINTS_VIEWの内容をinfo!でログ出力する。
         info!("Step 5: Logging USED_START_POINTS_VIEW after selecting start point A");
-        let used_start_points = crate::database::entities::used_start_points_view::Entity::find()
+        let used_start_points = used_start_points_view::Entity::find()
             .all(db.as_ref())
             .await?;
         for point in &used_start_points {
@@ -406,17 +415,13 @@ mod tests {
         let txn1 = db.begin().await?;
         // 6. get_adjacent_unused_extendable_pillar()に上記3で取得した開始点を引き渡して次の開始点を取得する。(開始点B)
         info!("Step 6: Getting adjacent unused extendable pillar (start point B)");
-        let start_point_b = crate::maze::move_next::get_adjacent_unused_extendable_pillar(
-            &txn1,
-            &tid_a,
-            &start_point_a,
-        )
-        .await?;
+        let start_point_b =
+            get_adjacent_unused_extendable_pillar(&txn1, &tid_a, &start_point_a).await?;
         txn1.commit().await?;
 
         // 7. MAZE_CELL_STATUS_VIEWの内容をinfo!でログ出力する。
         info!("Step 7: Logging MAZE_CELL_STATUS_VIEW after getting start point B");
-        let cell_statuses = crate::database::entities::maze_cell_status_view::Entity::find()
+        let cell_statuses = maze_cell_status_view::Entity::find()
             .all(db.as_ref())
             .await?;
         for status in &cell_statuses {
@@ -428,7 +433,7 @@ mod tests {
 
         // 8. USED_START_POINTS_VIEWの内容をinfo!でログ出力する。
         info!("Step 8: Logging USED_START_POINTS_VIEW after getting start point B");
-        let used_start_points = crate::database::entities::used_start_points_view::Entity::find()
+        let used_start_points = used_start_points_view::Entity::find()
             .all(db.as_ref())
             .await?;
         for point in &used_start_points {
@@ -456,7 +461,7 @@ mod tests {
 
         // 10. MAZE_CELL_STATUS_VIEWにて、中間点がWALLになっているいことを確認する。
         info!("Step 10: Verifying intermediate point is WALL in MAZE_CELL_STATUS_VIEW");
-        let cell_statuses = crate::database::entities::maze_cell_status_view::Entity::find()
+        let cell_statuses = maze_cell_status_view::Entity::find()
             .all(db.as_ref())
             .await?;
 
@@ -475,7 +480,7 @@ mod tests {
 
         assert_eq!(
             intermediate_status.cell_type,
-            crate::database::initializer::MazeCellTypeEnum::WALL.to_string(),
+            MazeCellTypeEnum::WALL.to_string(),
             "Intermediate point should be WALL type"
         );
         assert!(
@@ -487,7 +492,7 @@ mod tests {
         info!(
             "Step 11: Verifying start points A and B exist in USED_START_POINTS_VIEW with DIRECT_CONNECT"
         );
-        let used_start_points = database::entities::used_start_points_view::Entity::find()
+        let used_start_points = used_start_points_view::Entity::find()
             .all(db.as_ref())
             .await?;
 
@@ -507,7 +512,7 @@ mod tests {
 
         assert_eq!(
             point_a_used.outside_wall_connect_type,
-            crate::database::initializer::OutsideWallConnectTypeEnum::DIRECT_CONNECT.to_string(),
+            OutsideWallConnectTypeEnum::DIRECT_CONNECT.to_string(),
             "Start point A should have DIRECT_CONNECT status"
         );
         info!("  ✓ Start point A exists with DIRECT_CONNECT");
@@ -520,7 +525,7 @@ mod tests {
 
         assert_eq!(
             point_b_used.outside_wall_connect_type,
-            crate::database::initializer::OutsideWallConnectTypeEnum::DIRECT_CONNECT.to_string(),
+            OutsideWallConnectTypeEnum::DIRECT_CONNECT.to_string(),
             "Start point B should have DIRECT_CONNECT status"
         );
         info!("  ✓ Start point B exists with DIRECT_CONNECT");

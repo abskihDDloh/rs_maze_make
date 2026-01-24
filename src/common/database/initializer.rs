@@ -2,14 +2,14 @@ use sea_orm::{DatabaseTransaction, EntityTrait, TransactionTrait};
 use strum::IntoStaticStr;
 
 async fn erase_maze_field(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
-    crate::database::entities::maze_field::Entity::delete_many()
+    crate::common::database::entities::maze_field::Entity::delete_many()
         .exec(txn)
         .await?;
     Ok(())
 }
 
 async fn erase_thread_list(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
-    crate::database::entities::thread_list::Entity::delete_many()
+    crate::common::database::entities::thread_list::Entity::delete_many()
         .exec(txn)
         .await?;
 
@@ -17,20 +17,20 @@ async fn erase_thread_list(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbE
 }
 
 async fn erase_outside_wall_connect_type(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
-    crate::database::entities::outside_wall_connect_type::Entity::delete_many()
+    crate::common::database::entities::outside_wall_connect_type::Entity::delete_many()
         .exec(txn)
         .await?;
     Ok(())
 }
 
 async fn erase_maze_cell(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
-    crate::database::entities::maze_cell::Entity::delete_many()
+    crate::common::database::entities::maze_cell::Entity::delete_many()
         .exec(txn)
         .await?;
     Ok(())
 }
 async fn erase_maze_cell_type(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
-    crate::database::entities::maze_cell_type::Entity::delete_many()
+    crate::common::database::entities::maze_cell_type::Entity::delete_many()
         .exec(txn)
         .await?;
     Ok(())
@@ -52,12 +52,15 @@ async fn initialize_outside_wall_connect_type(
     ];
 
     for connect_type in connect_types {
-        let new_connect_type = crate::database::entities::outside_wall_connect_type::ActiveModel {
-            r#type: sea_orm::ActiveValue::Set(connect_type.to_string()),
-        };
-        crate::database::entities::outside_wall_connect_type::Entity::insert(new_connect_type)
-            .exec(txn)
-            .await?;
+        let new_connect_type =
+            crate::common::database::entities::outside_wall_connect_type::ActiveModel {
+                r#type: sea_orm::ActiveValue::Set(connect_type.to_string()),
+            };
+        crate::common::database::entities::outside_wall_connect_type::Entity::insert(
+            new_connect_type,
+        )
+        .exec(txn)
+        .await?;
     }
     Ok(())
 }
@@ -68,6 +71,7 @@ pub enum MazeCellTypeEnum {
     PATH,
     PILLAR,
     START,
+    ROUTE,
     END,
 }
 
@@ -78,12 +82,12 @@ async fn initialize_maze_cell(
 ) -> Result<(), Box<dyn std::error::Error>> {
     for x in 0..x_max {
         for y in 0..y_max {
-            let new_start_point = crate::database::entities::maze_cell::ActiveModel {
+            let new_start_point = crate::common::database::entities::maze_cell::ActiveModel {
                 x: sea_orm::ActiveValue::Set(x),
                 y: sea_orm::ActiveValue::Set(y),
                 id: sea_orm::ActiveValue::NotSet,
             };
-            crate::database::entities::maze_cell::Entity::insert(new_start_point)
+            crate::common::database::entities::maze_cell::Entity::insert(new_start_point)
                 .exec(txn)
                 .await?;
         }
@@ -102,10 +106,10 @@ async fn initialize_maze_cell_type(txn: &DatabaseTransaction) -> Result<(), sea_
     ];
 
     for cell_type in cell_types {
-        let new_cell_type = crate::database::entities::maze_cell_type::ActiveModel {
+        let new_cell_type = crate::common::database::entities::maze_cell_type::ActiveModel {
             cell_type: sea_orm::ActiveValue::Set(cell_type.to_string()),
         };
-        crate::database::entities::maze_cell_type::Entity::insert(new_cell_type)
+        crate::common::database::entities::maze_cell_type::Entity::insert(new_cell_type)
             .exec(txn)
             .await?;
     }
@@ -117,7 +121,7 @@ async fn initialize_maze_field(
     y_max: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // MAZE_CELLテーブルの内容を全件取得する。
-    let maze_cells = crate::database::entities::maze_cell::Entity::find()
+    let maze_cells = crate::common::database::entities::maze_cell::Entity::find()
         .all(txn)
         .await?;
     for cell in maze_cells {
@@ -132,12 +136,12 @@ async fn initialize_maze_field(
         } else {
             new_cell_type = MazeCellTypeEnum::PATH.to_string();
         }
-        let new_field = crate::database::entities::maze_field::ActiveModel {
+        let new_field = crate::common::database::entities::maze_field::ActiveModel {
             id: sea_orm::ActiveValue::Set(id),
             cell_type: sea_orm::ActiveValue::Set(new_cell_type),
             cell_owner_thread_id: sea_orm::ActiveValue::Set(None),
         };
-        crate::database::entities::maze_field::Entity::insert(new_field)
+        crate::common::database::entities::maze_field::Entity::insert(new_field)
             .exec(txn)
             .await?;
     }
@@ -187,7 +191,7 @@ pub async fn initialize_db(
 
 #[cfg(test)]
 mod tests {
-    use crate::database::connector::establish_connection;
+    use crate::common::database::connector::establish_connection;
     use sea_orm::PaginatorTrait;
 
     use super::*;
@@ -415,7 +419,7 @@ mod tests {
         // Verify data was inserted correctly
 
         eprintln!("Verifying maze_cell count...");
-        let cell_count = crate::database::entities::maze_cell::Entity::find()
+        let cell_count = crate::common::database::entities::maze_cell::Entity::find()
             .count(db.as_ref())
             .await
             .expect("Failed to count maze cells");
@@ -428,7 +432,7 @@ mod tests {
         );
 
         eprintln!("Verifying maze_field count...");
-        let field_count = crate::database::entities::maze_field::Entity::find()
+        let field_count = crate::common::database::entities::maze_field::Entity::find()
             .count(db.as_ref())
             .await
             .expect("Failed to count maze fields");
@@ -441,7 +445,7 @@ mod tests {
         );
 
         eprintln!("Verifying maze_cell_type count...");
-        let types = crate::database::entities::maze_cell_type::Entity::find()
+        let types = crate::common::database::entities::maze_cell_type::Entity::find()
             .all(db.as_ref())
             .await
             .expect("Failed to fetch cell types");

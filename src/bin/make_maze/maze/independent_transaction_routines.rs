@@ -1,29 +1,23 @@
 use log::debug;
 use rand::Rng;
-use sea_orm::{
-    ColumnTrait, ConnectionTrait, DbConn, EntityTrait, PaginatorTrait, QueryFilter, Statement,
-    TransactionTrait,
-};
+use sea_orm::{ColumnTrait, DbConn, EntityTrait, PaginatorTrait, QueryFilter, TransactionTrait};
 
-use crate::{
-    database::initializer::OutsideWallConnectTypeEnum,
-    maze::{
-        maze_point::MazePoint,
-        maze_thread_identifier::MazeThreadIdentifier,
-        maze_thread_utility::{
-            get_all_unused_pillars, get_pillar, is_point_outside_wall,
-            select_my_thread_record_from_tx,
-        },
-    },
-};
+use rs_maze_maker::common::database::entities::thread_list;
+use rs_maze_maker::common::database::entities::unused_start_points_view;
+use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
+use rs_maze_maker::common::maze_point::MazePoint;
+use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
+
+use crate::maze::maze_thread_utility::get_all_unused_pillars;
+use crate::maze::maze_thread_utility::get_pillar;
+use crate::maze::maze_thread_utility::is_point_outside_wall;
+use crate::maze::maze_thread_utility::select_my_thread_record_from_tx;
 
 pub async fn check_extendable_pillar_existance(
     db: &sea_orm::DbConn,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     // UNUSED_START_POINTS_VIEWのレコード数が0であればfalse、そうでない場合はtrueを返す。
-    let unused_count: u64 = crate::database::entities::unused_start_points_view::Entity::find()
-        .count(db)
-        .await?;
+    let unused_count: u64 = unused_start_points_view::Entity::find().count(db).await?;
     debug!("Unused start points count: {}", unused_count);
     Ok(unused_count > 0)
 }
@@ -33,9 +27,9 @@ pub async fn check_extendable_pillar_existance(
 pub async fn check_not_connect_outside_wall_thread_existance(
     db: &sea_orm::DbConn,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let not_connect_count: u64 = crate::database::entities::thread_list::Entity::find()
+    let not_connect_count: u64 = thread_list::Entity::find()
         .filter(
-            crate::database::entities::thread_list::Column::OutsideWallConnectType
+            thread_list::Column::OutsideWallConnectType
                 .eq(OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()),
         )
         .count(db)
@@ -51,10 +45,9 @@ pub async fn check_not_connect_outside_wall_thread_existance(
 pub async fn select_my_thread_record_from_db(
     db: &DbConn,
     tid: &MazeThreadIdentifier,
-) -> Result<crate::database::entities::thread_list::Model, Box<dyn std::error::Error>> {
+) -> Result<thread_list::Model, Box<dyn std::error::Error>> {
     let txn = db.begin().await?;
-    let thread_record: crate::database::entities::thread_list::Model =
-        select_my_thread_record_from_tx(&txn, tid).await?;
+    let thread_record: thread_list::Model = select_my_thread_record_from_tx(&txn, tid).await?;
     txn.commit().await?;
     Ok(thread_record)
 }
@@ -68,7 +61,7 @@ pub async fn select_random_start_point_from_db(
     let txn = db.begin().await?;
 
     // UNUSED_START_POINTS_VIEWを全件取得する。
-    let unused_start_points: Vec<crate::database::entities::unused_start_points_view::Model> =
+    let unused_start_points: Vec<unused_start_points_view::Model> =
         get_all_unused_pillars(&txn).await?;
 
     if unused_start_points.is_empty() {
@@ -101,18 +94,15 @@ pub async fn select_random_start_point_from_db(
 
     // THREAD_LISTテーブルに新しいスレッドレコードを追加する。
     // THREAD_ID=tid_str, CREATE_UNIXTIME=unix_time, START_CELL=selected_cell_id, OUTSIDE_WALL_CONNECT_TYPE=outside_wall_connect_type
-    let result = crate::database::entities::thread_list::Entity::insert(
-        crate::database::entities::thread_list::ActiveModel {
-            thread_id: sea_orm::Set(tid_str.to_string()),
-            create_unixtime: sea_orm::Set(unix_time),
-            start_cell: sea_orm::Set(selected_cell_id),
-            outside_wall_connect_type: sea_orm::Set(outside_wall_connect_type.to_string()),
-            ..Default::default()
-        },
-    )
+    let result = thread_list::Entity::insert(thread_list::ActiveModel {
+        thread_id: sea_orm::Set(tid_str.to_string()),
+        create_unixtime: sea_orm::Set(unix_time),
+        start_cell: sea_orm::Set(selected_cell_id),
+        outside_wall_connect_type: sea_orm::Set(outside_wall_connect_type.to_string()),
+        ..Default::default()
+    })
     .exec(&txn)
     .await?;
-
     // 追加したスレッドレコードのID列を取得する。
     let _new_thread_id = result.last_insert_id;
 
@@ -137,18 +127,20 @@ mod tests {
     use log::info;
 
     use super::*;
+    use rs_maze_maker::common::database::connector::establish_connection;
+    use rs_maze_maker::common::database::initializer::initialize_db;
 
     #[tokio::test]
     #[test_log::test]
     #[ignore] // DATABASE_URL が必要なため
     async fn test_select_random_start_point_five_times() {
         // DB接続を確立
-        let db = crate::database::connector::establish_connection(None)
+        let db: std::sync::Arc<sea_orm::DatabaseConnection> = establish_connection(None)
             .await
             .expect("Failed to connect to database");
 
         // DB初期化（5x5グリッド）
-        crate::database::initializer::initialize_db(&db, 5, 5)
+        initialize_db(&db, 5, 5)
             .await
             .expect("Failed to initialize database");
 

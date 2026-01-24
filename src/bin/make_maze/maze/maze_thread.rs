@@ -1,21 +1,18 @@
-use std::collections::HashSet;
-
-use crate::{
-    database::initializer::OutsideWallConnectTypeEnum,
-    maze::{
-        self,
-        connect_to_outside_wall::get_all_adjacent_not_myself_pillar,
-        independent_transaction_routines::{
-            check_extendable_pillar_existance, select_random_start_point_from_db,
-        },
-        maze_point::MazePoint,
-        maze_thread_identifier::MazeThreadIdentifier,
-        move_next::{get_adjacent_unused_extendable_pillar, path_to_wall},
-    },
-};
 use log::{debug, info, warn};
 use rand::seq::SliceRandom;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use rs_maze_maker::common::database::entities::thread_list;
+
+use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
+use rs_maze_maker::common::maze_point::MazePoint;
+use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
+use sea_orm::{EntityTrait, TransactionTrait};
+use std::collections::HashSet;
+
+use crate::maze::connect_to_outside_wall::get_all_adjacent_not_myself_pillar;
+use crate::maze::independent_transaction_routines::check_extendable_pillar_existance;
+use crate::maze::independent_transaction_routines::select_random_start_point_from_db;
+use crate::maze::move_next::get_adjacent_unused_extendable_pillar;
+use crate::maze::move_next::path_to_wall;
 
 macro_rules! debug_maze_state {
     ($maze_stack:expr, $current_pillar:expr, $tid:expr) => {
@@ -210,7 +207,7 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
             &tid, selected_pillar, outside_wall_pillar
         );
         // THREAD_LISTテーブルの、tidに該当するレコードのOUTSIDE_WALL_CONNECT_TYPEの値をINDIRECT_CONNECTに変更する。
-        let mut update_model = crate::database::entities::thread_list::ActiveModel {
+        let mut update_model = thread_list::ActiveModel {
             id: sea_orm::ActiveValue::Unchanged(is_from_outside.1),
             thread_id: sea_orm::ActiveValue::Unchanged(tid.thread_id_as_str().to_string()),
             create_unixtime: sea_orm::ActiveValue::Unchanged(tid.unix_time()),
@@ -219,7 +216,7 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
             ),
             ..Default::default()
         };
-        let update_result = crate::database::entities::thread_list::Entity::update(update_model)
+        let update_result = thread_list::Entity::update(update_model)
             .exec(&txn_finalize)
             .await;
         // エラーが出た場合はロールバックして次のtidへ。
@@ -246,23 +243,27 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
 mod tests {
     use std::error::Error;
 
-    use crate::{
-        database::initializer::MazeCellTypeEnum::WALL, maze::maze_thread::maze_thread_function,
+    use rs_maze_maker::common::database::entities::maze_cell_status_view;
+    use rs_maze_maker::common::database::entities::unused_start_points_view;
+    use rs_maze_maker::common::database::initializer::MazeCellTypeEnum::WALL;
+    use rs_maze_maker::common::database::{
+        connector::establish_connection, initializer::initialize_db,
     };
-
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    use crate::maze::maze_thread::maze_thread_function;
 
     #[tokio::test]
     #[test_log::test]
     #[ignore] // DATABASE_URL が必要なため
     async fn test_maze_thread_completes_successfully() {
         // DB接続を確立
-        let db = crate::database::connector::establish_connection(None)
+        let db = establish_connection(None)
             .await
             .expect("Failed to connect to database");
 
         // DB初期化（5x5グリッド）
-        crate::database::initializer::initialize_db(&db, 5, 5)
+        initialize_db(&db, 5, 5)
             .await
             .expect("Failed to initialize database");
 
@@ -271,7 +272,7 @@ mod tests {
         assert!(result.is_ok(), "maze_thread failed: {:?}", result.err());
 
         // 条件A: UNUSED_START_POINTS_VIEW が 0 件であること
-        let unused_count: u64 = crate::database::entities::unused_start_points_view::Entity::find()
+        let unused_count: u64 = unused_start_points_view::Entity::find()
             .all(db.as_ref())
             .await
             .expect("Failed to count unused start points")
@@ -287,18 +288,15 @@ mod tests {
         let mut wall_found = false;
         let mut wall_count = 0;
         for (x, y) in &wall_candidates {
-            let cell: Vec<crate::database::entities::maze_cell_status_view::Model> =
-                crate::database::entities::maze_cell_status_view::Entity::find()
-                    .filter(
-                        crate::database::entities::maze_cell_status_view::Column::X
-                            .eq(*x)
-                            .and(
-                                crate::database::entities::maze_cell_status_view::Column::Y.eq(*y),
-                            ),
-                    )
-                    .all(db.as_ref())
-                    .await
-                    .expect("Failed to query MAZE_CELL_STATUS_VIEW");
+            let cell: Vec<maze_cell_status_view::Model> = maze_cell_status_view::Entity::find()
+                .filter(
+                    maze_cell_status_view::Column::X
+                        .eq(*x)
+                        .and(maze_cell_status_view::Column::Y.eq(*y)),
+                )
+                .all(db.as_ref())
+                .await
+                .expect("Failed to query MAZE_CELL_STATUS_VIEW");
 
             if !cell.is_empty() && cell[0].cell_type == WALL.to_string() {
                 wall_found = true;
@@ -321,18 +319,15 @@ mod tests {
         // 条件C: 以下の座標がすべて "PATH" になっている
         let path_coords = vec![(1, 1), (3, 1), (3, 3), (1, 3)];
         for (x, y) in &path_coords {
-            let cell: Vec<crate::database::entities::maze_cell_status_view::Model> =
-                crate::database::entities::maze_cell_status_view::Entity::find()
-                    .filter(
-                        crate::database::entities::maze_cell_status_view::Column::X
-                            .eq(*x)
-                            .and(
-                                crate::database::entities::maze_cell_status_view::Column::Y.eq(*y),
-                            ),
-                    )
-                    .all(db.as_ref())
-                    .await
-                    .expect("Failed to query MAZE_CELL_STATUS_VIEW");
+            let cell: Vec<maze_cell_status_view::Model> = maze_cell_status_view::Entity::find()
+                .filter(
+                    maze_cell_status_view::Column::X
+                        .eq(*x)
+                        .and(maze_cell_status_view::Column::Y.eq(*y)),
+                )
+                .all(db.as_ref())
+                .await
+                .expect("Failed to query MAZE_CELL_STATUS_VIEW");
 
             assert!(!cell.is_empty(), "Cell at ({}, {}) should exist", x, y);
             assert_eq!(

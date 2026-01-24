@@ -13,10 +13,15 @@
 use log::debug;
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter};
 
-use crate::{
-    database::initializer::{MazeCellTypeEnum, OutsideWallConnectTypeEnum},
-    maze::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier},
-};
+use rs_maze_maker::common::database::entities::thread_list;
+use rs_maze_maker::common::database::entities::maze_field;
+use rs_maze_maker::common::database::entities::unused_start_points_view;
+use rs_maze_maker::common::database::entities::maze_cell_owner_view;
+use rs_maze_maker::common::database::entities::maze_cell_status_view;
+use rs_maze_maker::common::database::entities::outside_wall_start_points_view;
+use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
+use rs_maze_maker::common::maze_point::MazePoint;
+use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 
 /// 指定されたスレッド識別子に対応するスレッドレコードをデータベースから取得します。
 ///
@@ -32,13 +37,13 @@ use crate::{
 pub async fn select_my_thread_record_from_tx(
     txn: &DatabaseTransaction,
     tid: &MazeThreadIdentifier,
-) -> Result<crate::database::entities::thread_list::Model, Box<dyn std::error::Error>> {
-    let thread_record = crate::database::entities::thread_list::Entity::find()
+) -> Result<thread_list::Model, Box<dyn std::error::Error>> {
+    let thread_record = thread_list::Entity::find()
         .filter(
-            crate::database::entities::thread_list::Column::ThreadId
+            thread_list::Column::ThreadId
                 .eq(tid.thread_id_as_str())
                 .and(
-                    crate::database::entities::thread_list::Column::CreateUnixtime
+                    thread_list::Column::CreateUnixtime
                         .eq(tid.unix_time()),
                 ),
         )
@@ -58,12 +63,12 @@ pub async fn select_my_thread_record_from_tx(
 pub async fn get_all_unused_pillars(
     txn: &DatabaseTransaction,
 ) -> Result<
-    Vec<crate::database::entities::unused_start_points_view::Model>,
+    Vec<unused_start_points_view::Model>,
     Box<dyn std::error::Error>,
 > {
     // UNUSED_START_POINTS_VIEWを全件取得する。
-    let unused_start_points: Vec<crate::database::entities::unused_start_points_view::Model> =
-        crate::database::entities::unused_start_points_view::Entity::find()
+    let unused_start_points: Vec<unused_start_points_view::Model> =
+        unused_start_points_view::Entity::find()
             .all(txn)
             .await?;
     Ok(unused_start_points)
@@ -81,16 +86,16 @@ pub async fn check_unused_pillars(
     txn: &DatabaseTransaction,
     pillars: &Vec<MazePoint>,
 ) -> Result<
-    Vec<crate::database::entities::unused_start_points_view::Model>,
+    Vec<unused_start_points_view::Model>,
     Box<dyn std::error::Error>,
 > {
-    let unused_points: Vec<crate::database::entities::unused_start_points_view::Model> =
-        crate::database::entities::unused_start_points_view::Entity::find()
+    let unused_points: Vec<unused_start_points_view::Model> =
+        unused_start_points_view::Entity::find()
             .filter(
-                crate::database::entities::unused_start_points_view::Column::X
+                unused_start_points_view::Column::X
                     .is_in(pillars.iter().map(|p| p.x()).collect::<Vec<u64>>())
                     .and(
-                        crate::database::entities::unused_start_points_view::Column::Y
+                        unused_start_points_view::Column::Y
                             .is_in(pillars.iter().map(|p| p.y()).collect::<Vec<u64>>()),
                     ),
             )
@@ -109,13 +114,13 @@ pub async fn check_unused_pillars(
 pub async fn get_used_cell_status(
     txn: &DatabaseTransaction,
     cell: &MazePoint,
-) -> Result<crate::database::entities::maze_cell_owner_view::Model, Box<dyn std::error::Error>> {
-    let used_cell_status: Vec<crate::database::entities::maze_cell_owner_view::Model> =
-        crate::database::entities::maze_cell_owner_view::Entity::find()
+) -> Result<maze_cell_owner_view::Model, Box<dyn std::error::Error>> {
+    let used_cell_status: Vec<maze_cell_owner_view::Model> =
+        maze_cell_owner_view::Entity::find()
             .filter(
-                crate::database::entities::maze_cell_owner_view::Column::X
+                maze_cell_owner_view::Column::X
                     .eq(cell.x())
-                    .and(crate::database::entities::maze_cell_owner_view::Column::Y.eq(cell.y())),
+                    .and(maze_cell_owner_view::Column::Y.eq(cell.y())),
             )
             .all(txn)
             .await?;
@@ -136,13 +141,13 @@ pub async fn get_used_cell_status(
 pub async fn get_cell_status(
     txn: &DatabaseTransaction,
     cell: &MazePoint,
-) -> Result<crate::database::entities::maze_cell_status_view::Model, Box<dyn std::error::Error>> {
-    let cell_status: Vec<crate::database::entities::maze_cell_status_view::Model> =
-        crate::database::entities::maze_cell_status_view::Entity::find()
+) -> Result<maze_cell_status_view::Model, Box<dyn std::error::Error>> {
+    let cell_status: Vec<maze_cell_status_view::Model> =
+        maze_cell_status_view::Entity::find()
             .filter(
-                crate::database::entities::maze_cell_status_view::Column::X
+                maze_cell_status_view::Column::X
                     .eq(cell.x())
-                    .and(crate::database::entities::maze_cell_status_view::Column::Y.eq(cell.y())),
+                    .and(maze_cell_status_view::Column::Y.eq(cell.y())),
             )
             .all(txn)
             .await?;
@@ -186,13 +191,13 @@ pub async fn is_this_thread_connect_outside_wall(
 pub async fn is_point_outside_wall(txn: &DatabaseTransaction, pillar: &MazePoint) -> bool {
     // OUTSIDE_WALL_START_POINTS_VIEWに、pillarの内容に(X AND Y)が当てはまるレコードが存在するか確認する。
     let outside_wall_start_points: Vec<
-        crate::database::entities::outside_wall_start_points_view::Model,
-    > = crate::database::entities::outside_wall_start_points_view::Entity::find()
+        outside_wall_start_points_view::Model,
+    > = outside_wall_start_points_view::Entity::find()
         .filter(
-            crate::database::entities::outside_wall_start_points_view::Column::X
+            outside_wall_start_points_view::Column::X
                 .eq(pillar.x())
                 .and(
-                    crate::database::entities::outside_wall_start_points_view::Column::Y
+                    outside_wall_start_points_view::Column::Y
                         .eq(pillar.y()),
                 ),
         )
@@ -221,22 +226,22 @@ pub async fn get_pillar(
     txn: &DatabaseTransaction,
     cell_id: u64,
     thread_id: u64,
-) -> Result<crate::database::entities::maze_field::Model, Box<dyn std::error::Error>> {
+) -> Result<maze_field::Model, Box<dyn std::error::Error>> {
     debug!(
         "Attempting to acquire pillar cell_id={} for thread_id={}",
         cell_id, thread_id
     );
     // MAZE_FIELDのセルIDがcell_idであるレコードを取得する。
-    let pillar_record: crate::database::entities::maze_field::Model =
-        crate::database::entities::maze_field::Entity::find()
+    let pillar_record: maze_field::Model =
+        maze_field::Entity::find()
             .filter(
-                crate::database::entities::maze_field::Column::Id
+                maze_field::Column::Id
                     .eq(cell_id)
                     .and(
-                        crate::database::entities::maze_field::Column::CellType
+                        maze_field::Column::CellType
                             .eq("PILLAR")
                             .and(
-                                crate::database::entities::maze_field::Column::CellOwnerThreadId
+                                maze_field::Column::CellOwnerThreadId
                                     .is_null(),
                             ),
                     ),
@@ -250,7 +255,7 @@ pub async fn get_pillar(
     // CELL_OWNER_THREAD_IDをthread_idに更新する。
     let mut active_pillar = pillar_record.clone().into_active_model();
     active_pillar.cell_owner_thread_id = sea_orm::Set(Some(thread_id));
-    let updated_record = crate::database::entities::maze_field::Entity::update(active_pillar)
+    let updated_record = maze_field::Entity::update(active_pillar)
         .exec(txn)
         .await?;
     debug!(

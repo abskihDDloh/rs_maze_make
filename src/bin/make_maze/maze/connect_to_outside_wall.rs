@@ -3,16 +3,12 @@ use std::collections::{HashMap, HashSet};
 use log::{debug, warn};
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder};
 
-use crate::{
-    database::{
-        entities::maze_cell_owner_view,
-        initializer::{MazeCellTypeEnum, OutsideWallConnectTypeEnum},
-    },
-    maze::{
-        maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier,
-        maze_thread_utility::get_used_cell_status,
-    },
-};
+use rs_maze_maker::common::database::entities::maze_cell_owner_view;
+use rs_maze_maker::common::database::initializer::MazeCellTypeEnum;
+use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
+use rs_maze_maker::common::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier};
+
+use crate::maze::maze_thread_utility::get_used_cell_status;
 
 /// 指定した迷路スレッドIDに属する柱セルに隣接する、かつ自分自身の柱セルではない柱セル、かつ外壁につながっている壁に属する柱セルの座標一覧を取得する。
 /// # Arguments

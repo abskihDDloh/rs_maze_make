@@ -8,8 +8,12 @@ name = "rs_maze_maker"
 path = "src/lib.rs"
 
 [[bin]]
-name = "rs_maze_maker"
-path = "src/main.rs"
+name = "make_maze"
+path = "src/bin/make_maze/main.rs"
+
+[[bin]]
+name = "visualize_maze"
+path = "src/bin/visualize_maze/main.rs"
 
 [dependencies]
 log = "0.4.28"
@@ -23,10 +27,10 @@ petgraph = "0.8.2"
 test-log = "0.2.18"
 dirs = "6.0.0"
 num_cpus = "1.17.0"
-dotenv = "0.15.0"
+dotenv = "0.14.1"
+tokio = { version = "1.49.0", features = ["full"] }
 sea-orm = { version = "1.1.19", features = [ "sqlx-mysql", "runtime-tokio-native-tls", "macros","with-chrono" ] }
 strum = { version = "0.27.2", features = ["derive"] }
 [dev-dependencies]
 tempfile = "3.22.0"
-tokio = { version = "1.49.0", features = ["full"] }
 test-log = {version = "0.2", features = ["trace"]}
