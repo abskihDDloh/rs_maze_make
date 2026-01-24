@@ -55,6 +55,9 @@ async fn start(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
+    // ログ初期化
+    env_logger::init();
+
     info!("Application started with args: {:?} ", args);
 
     let file_path_str = args.file_path;

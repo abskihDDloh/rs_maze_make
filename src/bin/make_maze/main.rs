@@ -1,4 +1,5 @@
 use clap::Parser;
+use dotenv::dotenv;
 use log::{LevelFilter, error, info, warn};
 
 use rs_maze_maker::common::database::connector::establish_connection;
@@ -36,6 +37,12 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    // .envファイルから環境変数を読み込む
+    dotenv().ok();
+    
+    // ログ初期化
+    env_logger::init();
+
     let args = Args::parse();
     let x = args.x_size;
     let y = args.y_size;

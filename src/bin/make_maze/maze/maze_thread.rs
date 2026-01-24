@@ -1,14 +1,10 @@
 use log::{debug, info, warn};
-use rand::seq::SliceRandom;
-use rs_maze_maker::common::database::entities::thread_list;
 
-use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
 use rs_maze_maker::common::maze_point::MazePoint;
 use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
-use sea_orm::{EntityTrait, TransactionTrait};
+use sea_orm::TransactionTrait;
 use std::collections::HashSet;
 
-use crate::maze::connect_to_outside_wall::get_all_adjacent_not_myself_pillar;
 use crate::maze::independent_transaction_routines::check_extendable_pillar_existance;
 use crate::maze::independent_transaction_routines::select_random_start_point_from_db;
 use crate::maze::move_next::get_adjacent_unused_extendable_pillar;
@@ -99,146 +95,9 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
             txn_unused_point.commit().await?;
         }
     }
-
-    debug!(
-        "All maze threads completed, attempting to connect to outside walls. tids: {:?}",
-        tids
-    );
-
-    //tidsの中身をイテレーションしてループする。
-    for tid in tids {
-        // このスレッドの作った壁がすでに外壁に接続している場合は次のtidを確認する。
-        let txn_check_outside_thread = db.begin().await?;
-        let is_from_outside =
-            crate::maze::maze_thread_utility::is_this_thread_connect_outside_wall(
-                &txn_check_outside_thread,
-                &tid,
-            )
-            .await;
-        // エラーが出た場合はロールバックして次のtidへ。
-        let is_from_outside = match is_from_outside {
-            Ok(b) => b,
-            Err(e) => {
-                warn!(
-                    "Failed to check outside wall connection for tid {:?}: {:?}.",
-                    &tid, e
-                );
-                txn_check_outside_thread.rollback().await?;
-                continue;
-            }
-        };
-        txn_check_outside_thread.commit().await?;
-        if is_from_outside.0 {
-            info!(
-                "Thread {:?} did start from outside wall, restarting maze thread.",
-                &tid
-            );
-            continue;
-        }
-        info!(
-            "Thread {:?} did NOT start from outside wall, finalizing maze.",
-            &tid
-        );
-        let txn_get_adjacents = db.begin().await?;
-        let adjacent_other_thread_pillars =
-            get_all_adjacent_not_myself_pillar(&txn_get_adjacents, &tid).await;
-        // エラーが出た場合はロールバックして次のtidへ。
-        let adjacent_other_thread_pillars = match adjacent_other_thread_pillars {
-            Ok(map) => map,
-            Err(e) => {
-                warn!(
-                    "Failed to get adjacent other thread pillars for tid {:?}: {:?}.",
-                    &tid, e
-                );
-                txn_get_adjacents.rollback().await?;
-                continue;
-            }
-        };
-        if adjacent_other_thread_pillars.is_empty() {
-            warn!(
-                "No adjacent other thread pillars found for tid {:?}, cannot connect to outside wall.",
-                &tid
-            );
-            // 見つからない場合は次のtidへ。
-            txn_get_adjacents.commit().await?;
-            continue;
-        }
-        txn_get_adjacents.commit().await?;
-
-        // adjacent_other_thread_pillarsのキーのリストを取得する。
-        let mut adjacent_keys: Vec<&MazePoint> = adjacent_other_thread_pillars.keys().collect();
-        // キーの内容をランダムに１つ取得する。
-        let mut rng = rand::rng();
-        adjacent_keys.shuffle(&mut rng);
-        let selected_pillar = adjacent_keys[0];
-        debug!(
-            "AAAA_Selected pillar to connect outside wall: {:?}",
-            selected_pillar
-        );
-        // selected_pillarに隣接する外壁に接続している柱セルのリストを取得する。
-        let adjacent_outside_wall_pillars = &adjacent_other_thread_pillars[selected_pillar];
-        // adjacent_outside_wall_pillarsの内容をランダムに１つ取得する。
-        let mut rng = rand::rng();
-        let mut shuffled_adjacent = adjacent_outside_wall_pillars.clone();
-        shuffled_adjacent.shuffle(&mut rng);
-        let outside_wall_pillar = &shuffled_adjacent[0];
-        debug!(
-            "AAAA_Selected outside wall pillar to connect: {:?}",
-            outside_wall_pillar
-        );
-
-        let txn_finalize = db.begin().await?;
-        // selected_pillarからoutside_wall_pillarまでpath_to_wall()で接続する。
-        let result_to_outside_wall =
-            path_to_wall(&txn_finalize, &tid, selected_pillar, outside_wall_pillar).await;
-        match result_to_outside_wall {
-            Ok(_) => {}
-            Err(e) => {
-                warn!(
-                    "path_to_wall() to outside wall error for tid {:?}: {:?}.",
-                    &tid, e
-                );
-                txn_finalize.rollback().await?;
-                continue;
-            }
-        }
-        debug!(
-            "AAAA_Successfully connected thread {:?} to outside wall. Selected pillar: {:?}, Outside wall pillar: {:?}",
-            &tid, selected_pillar, outside_wall_pillar
-        );
-        // THREAD_LISTテーブルの、tidに該当するレコードのOUTSIDE_WALL_CONNECT_TYPEの値をINDIRECT_CONNECTに変更する。
-        let mut update_model = thread_list::ActiveModel {
-            id: sea_orm::ActiveValue::Unchanged(is_from_outside.1),
-            thread_id: sea_orm::ActiveValue::Unchanged(tid.thread_id_as_str().to_string()),
-            create_unixtime: sea_orm::ActiveValue::Unchanged(tid.unix_time()),
-            outside_wall_connect_type: sea_orm::ActiveValue::Set(
-                OutsideWallConnectTypeEnum::INDIRECT_CONNECT.to_string(),
-            ),
-            ..Default::default()
-        };
-        let update_result = thread_list::Entity::update(update_model)
-            .exec(&txn_finalize)
-            .await;
-        // エラーが出た場合はロールバックして次のtidへ。
-        match update_result {
-            Ok(_) => {}
-            Err(e) => {
-                warn!(
-                    "AAAA_Failed to update OUTSIDE_WALL_CONNECT_TYPE for tid {:?}: {:?}.",
-                    &tid, e
-                );
-                txn_finalize.rollback().await?;
-                continue;
-            }
-        }
-        debug!(
-            "AAAA_Successfully updated thread record for tid {:?} to INDIRECT_CONNECT. Selected pillar: {:?}, Outside wall pillar: {:?}",
-            &tid, selected_pillar, outside_wall_pillar
-        );
-        txn_finalize.commit().await?;
-    }
     Ok(())
 }
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;

@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use log::{debug, warn};
+use log::{debug, info, warn};
+use rs_maze_maker::common::database::entities::thread_list;
+use sea_orm::TransactionTrait;
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder};
 
 use rs_maze_maker::common::database::entities::maze_cell_owner_view;
@@ -8,6 +10,7 @@ use rs_maze_maker::common::database::initializer::MazeCellTypeEnum;
 use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
 use rs_maze_maker::common::{maze_point::MazePoint, maze_thread_identifier::MazeThreadIdentifier};
 
+use crate::maze::maze_thread_utility::get_not_connect_thread_records;
 use crate::maze::maze_thread_utility::get_used_cell_status;
 
 /// 指定した迷路スレッドIDに属する柱セルに隣接する、かつ自分自身の柱セルではない柱セル、かつ外壁につながっている壁に属する柱セルの座標一覧を取得する。
@@ -16,7 +19,7 @@ use crate::maze::maze_thread_utility::get_used_cell_status;
 /// * `tid` - 迷路スレッド識別子参照
 /// # Returns
 /// * `Result<Vec<MazePoint>, Box<dyn std::error::Error>>` - 隣接する柱セルの座標一覧、またはエラー
-pub async fn get_all_adjacent_not_myself_pillar(
+async fn get_all_adjacent_not_myself_pillar(
     txn: &DatabaseTransaction,
     tid: &MazeThreadIdentifier,
 ) -> Result<HashMap<MazePoint, Vec<MazePoint>>, Box<dyn std::error::Error>> {
@@ -64,4 +67,42 @@ pub async fn get_all_adjacent_not_myself_pillar(
         tid, adjacent_walls_pillar_map
     );
     Ok(adjacent_walls_pillar_map)
+}
+
+async fn connect_to_outside_wall(
+    db: &sea_orm::DbConn,
+    wall_thread: &thread_list::Model,
+) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+pub async fn connect_all_not_connected_threads_to_outside_wall(
+    db: &sea_orm::DbConn,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let txn_get_targets = db.begin().await?;
+    let not_connected_threads = get_not_connect_thread_records(&txn_get_targets).await?;
+    txn_get_targets.commit().await?;
+    let local_set = tokio::task::LocalSet::new();
+    local_set
+        .run_until(async {
+            let mut handles = vec![];
+            for rec in not_connected_threads {
+                let db_clone = db.clone();
+                let handle =
+                    tokio::task::spawn_local(async move { connect_to_outside_wall(&db_clone, &rec).await });
+                handles.push(handle);
+            }
+            // すべてのタスクの完了を待つ
+            for handle in handles {
+                let result = handle.await;
+                // 利用可能な開始点がなくなった時点で必ずエラーになる。
+                match result {
+                    Ok(_) => info!("Maze finalize task completed successfully."),
+                    Err(e) => warn!("Maze finalize task failed: {}", e),
+                }
+            }
+        })
+        .await;
+
+    Ok(())
 }

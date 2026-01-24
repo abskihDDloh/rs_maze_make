@@ -23,6 +23,22 @@ use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
 use rs_maze_maker::common::maze_point::MazePoint;
 use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 
+
+/// THREAD_LISTからOUTSIDE_WALL_CONNECT_TYPE=NOT_CONNECTであるレコードを取得する。
+pub async fn get_not_connect_thread_records(
+    txn: &DatabaseTransaction,
+) -> Result<Vec<thread_list::Model>, Box<dyn std::error::Error>> {
+    let thread_records: Vec<thread_list::Model> =
+        thread_list::Entity::find()
+            .filter(
+                thread_list::Column::OutsideWallConnectType
+                    .eq(OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()),
+            )
+            .all(txn)
+            .await?;
+    Ok(thread_records)
+}
+
 /// 指定されたスレッド識別子に対応するスレッドレコードをデータベースから取得します。
 ///
 /// # 引数

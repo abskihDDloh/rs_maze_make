@@ -16,7 +16,7 @@ pub async fn establish_connection(max_connections: Option<u32>) -> Result<Arc<Db
         .idle_timeout(Duration::from_secs(8))
         .max_lifetime(Duration::from_secs(8))
         .sqlx_logging(true)
-        .sqlx_logging_level(log::LevelFilter::Info);
+        .sqlx_logging_level(log::LevelFilter::Warn); // デフォルトをWarnに変更（RUST_LOGで制御可能）
 
     //  DB接続のためのコネクションを生成
     Database::connect(opt).await.map(Arc::new)
