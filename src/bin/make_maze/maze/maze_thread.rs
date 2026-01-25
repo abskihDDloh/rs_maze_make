@@ -1,5 +1,8 @@
+use std::thread;
+
 use log::{debug, info, warn};
 
+use rand::Rng;
 use rs_maze_maker::common::maze_point::MazePoint;
 use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 use rs_maze_maker::common::util::get_end_time_and_elapsed_time;
@@ -75,7 +78,10 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
         let mut txn_extend_wall = db.begin().await?;
 
         loop {
-            let inner_loop_start_time = get_now_unix_time();
+            let mut inner_loop_start_time: i64 = 0;
+            if log::log_enabled!(log::Level::Debug) {
+                inner_loop_start_time = get_now_unix_time();
+            }
             let current_pillar = match maze_stack.last() {
                 Some(p) => *p,
                 None => {
@@ -142,6 +148,10 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
             // 定期的にコミットしてロックを解放（ボトルネック対策）
             if operation_count >= OPERATIONS_PER_COMMIT {
                 txn_extend_wall.commit().await?;
+                use std::time::Duration;
+                let mut rng = rand::rng();
+                let sleep_time = rng.random_range(5..=10);
+                thread::sleep(Duration::from_millis(sleep_time));
                 txn_extend_wall = db.begin().await?;
                 operation_count = 0;
                 debug!(
@@ -149,11 +159,13 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
                     tid
                 );
             }
-            let inner_loop_elpsed_time = get_end_time_and_elapsed_time(inner_loop_start_time);
-            info!(
-                "Inner loop elapsed time for thread {:?}: {:?} ns",
-                tid, inner_loop_elpsed_time
-            );
+            if log::log_enabled!(log::Level::Debug) {
+                let inner_loop_elpsed_time = get_end_time_and_elapsed_time(inner_loop_start_time);
+                debug!(
+                    "Inner loop elapsed time for thread {:?}: {:?} ns",
+                    tid, inner_loop_elpsed_time
+                );
+            }
         }
         txn_extend_wall.commit().await?;
     }
