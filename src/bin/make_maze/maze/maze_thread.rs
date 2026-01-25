@@ -41,7 +41,7 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
         };
 
         // Always initialize tid to a safe default to avoid uninitialized use.
-        let mut tid = pre_tid;
+        let mut tid = pre_tid.clone();
         if !thread_ID_cached_flag {
             let tid_rec_res = select_my_thread_record_from_db(db, &pre_tid).await;
             let tid_rec = match tid_rec_res {

@@ -12,6 +12,7 @@
 
 use log::debug;
 use log::info;
+use sea_orm::QuerySelect;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
 };
@@ -59,19 +60,22 @@ pub async fn select_my_thread_record_from_tx(
     Ok(thread_record)
 }
 
-/// データベースから全ての未使用の柱（開始点）を取得します。
+/// データベースから最大1000件の未使用の柱（開始点）を取得します。
 ///
 /// # 引数
 /// * `txn` - データベーストランザクション
 ///
 /// # 戻り値
 /// 未使用開始点ビューのモデルのベクタ、またはエラー
-pub async fn get_all_unused_pillars(
+pub async fn get_1000_unused_pillars(
     txn: &DatabaseTransaction,
 ) -> Result<Vec<unused_start_points_view::Model>, Box<dyn std::error::Error>> {
-    // UNUSED_START_POINTS_VIEWを全件取得する。
+    // UNUSED_START_POINTS_VIEWを1000件取得する。
     let unused_start_points: Vec<unused_start_points_view::Model> =
-        unused_start_points_view::Entity::find().all(txn).await?;
+        unused_start_points_view::Entity::find()
+            .limit(1000)
+            .all(txn)
+            .await?;
     Ok(unused_start_points)
 }
 

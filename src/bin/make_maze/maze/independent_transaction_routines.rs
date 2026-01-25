@@ -8,7 +8,7 @@ use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
 use rs_maze_maker::common::maze_point::MazePoint;
 use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 
-use crate::maze::maze_thread_utility::get_all_unused_pillars;
+use crate::maze::maze_thread_utility::get_1000_unused_pillars;
 use crate::maze::maze_thread_utility::get_pillar;
 use crate::maze::maze_thread_utility::is_point_outside_wall;
 use crate::maze::maze_thread_utility::select_my_thread_record_from_tx;
@@ -63,7 +63,7 @@ pub async fn select_random_start_point_from_db(
 
     // UNUSED_START_POINTS_VIEWを全件取得する。
     let unused_start_points: Vec<unused_start_points_view::Model> =
-        get_all_unused_pillars(&txn).await?;
+        get_1000_unused_pillars(&txn).await?;
 
     if unused_start_points.is_empty() {
         return Err("No unused start points available.".into());
