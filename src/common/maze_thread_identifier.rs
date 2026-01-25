@@ -7,11 +7,14 @@ use chrono::{DateTime, NaiveDateTime};
 use rand::Rng;
 use sea_orm::prelude::DateTimeUtc;
 
+use crate::common::{database::entities::thread_list, util::get_now_unix_time};
+
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct MazeThreadIdentifier {
+    table_thread_id: u64,
     /// スレッドID（生成元スレッドの識別）
     tid_id: thread::ThreadId,
-    /// UNIX時刻（ミリ秒精度）
+    /// UNIX時刻（ナノ秒精度）
     unix_time: i64,
 }
 
@@ -23,12 +26,43 @@ impl MazeThreadIdentifier {
         let sleep_time = rng.random_range(5..=10);
         thread::sleep(Duration::from_millis(sleep_time));
         let tid_id: thread::ThreadId = thread::current().id();
-        // SystemTimeを使用して取得（ミリ秒精度）
-        let unix_time: i64 = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_nanos() as i64;
-        MazeThreadIdentifier { tid_id, unix_time }
+        // SystemTimeを使用して取得（ナノ秒精度）
+        let unix_time: i64 = get_now_unix_time();
+        MazeThreadIdentifier {
+            table_thread_id: 0,
+            tid_id,
+            unix_time,
+        }
+    }
+
+    /// データベースのスレッドレコードからMazeThreadIdentifierを生成します。
+    /// # 引数
+    /// * `record` - データベースから取得したスレッドレコード
+    /// # 戻り値
+    /// MazeThreadIdentifierのインスタンス、またはエラー
+    /// # エラー
+    /// スレッドIDまたはUNIX時間が一致しない場合に発生します。
+    pub fn from_db_Record(
+        &self,
+        record: thread_list::Model,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        if (self.thread_id_as_str() != record.thread_id)
+            || (self.unix_time() != record.create_unixtime)
+        {
+            return Err(format!(
+                "Mismatch in thread identifier. Expected: {}_{}, Found: {}_{}",
+                self.thread_id_as_str(),
+                self.unix_time(),
+                record.thread_id,
+                record.create_unixtime
+            )
+            .into());
+        }
+        Ok(Self {
+            table_thread_id: record.id,
+            tid_id: self.tid_id,
+            unix_time: self.unix_time,
+        })
     }
 }
 

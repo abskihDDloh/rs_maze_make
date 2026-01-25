@@ -2,8 +2,11 @@ use log::{debug, info, warn};
 
 use rs_maze_maker::common::maze_point::MazePoint;
 use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
+use rs_maze_maker::common::util::get_end_time_and_elapsed_time;
+use rs_maze_maker::common::util::get_now_unix_time;
 use sea_orm::TransactionTrait;
 
+use crate::maze::independent_transaction_routines::select_my_thread_record_from_db;
 use crate::maze::independent_transaction_routines::select_random_start_point_from_db;
 use crate::maze::move_next::get_adjacent_unused_extendable_pillar;
 use crate::maze::move_next::path_to_wall;
@@ -20,28 +23,59 @@ macro_rules! debug_maze_state {
 pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn std::error::Error>> {
     // 未使用のスタートポイントがある場合のループ。
     // ボトルネック対策: 定期的にコミットしてロックを解放
-    const OPERATIONS_PER_COMMIT: u32 = 50;
-
+    const OPERATIONS_PER_COMMIT: u32 = 25;
+    let mut thread_ID_cached_flag = false;
     loop {
         let mut maze_stack: Vec<MazePoint> = Vec::new();
-        let tid = MazeThreadIdentifier::new();
-        let start_point_result = select_random_start_point_from_db(db, &tid).await;
+        let pre_tid = MazeThreadIdentifier::new();
+        let start_point_result = select_random_start_point_from_db(db, &pre_tid).await;
         let start_point = match start_point_result {
             Ok(p) => p,
             Err(e) => {
                 debug!(
                     "No more unused start points available or error occurred: {:?}. Exiting maze thread. Current tid: {:?}",
-                    e, tid
+                    e, pre_tid
                 );
                 break;
             }
         };
+
+        // Always initialize tid to a safe default to avoid uninitialized use.
+        let mut tid = pre_tid;
+        if !thread_ID_cached_flag {
+            let tid_rec_res = select_my_thread_record_from_db(db, &pre_tid).await;
+            let tid_rec = match tid_rec_res {
+                Ok(r) => {
+                    thread_ID_cached_flag = true;
+                    r
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to retrieve thread record for tid {:?}: {:?}. Continuing without cached thread ID.",
+                        pre_tid, e
+                    );
+                    break;
+                }
+            };
+            tid = match pre_tid.from_db_Record(tid_rec) {
+                Ok(t) => t,
+                Err(e) => {
+                    warn!(
+                        "Thread identifier mismatch for tid {:?}: {:?}. Continuing without cached thread ID.",
+                        pre_tid, e
+                    );
+                    break;
+                }
+            };
+        }
+
         maze_stack.push(start_point);
 
         let mut operation_count = 0;
         let mut txn_extend_wall = db.begin().await?;
 
         loop {
+            let inner_loop_start_time = get_now_unix_time();
             let current_pillar = match maze_stack.last() {
                 Some(p) => *p,
                 None => {
@@ -115,6 +149,11 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
                     tid
                 );
             }
+            let inner_loop_elpsed_time = get_end_time_and_elapsed_time(inner_loop_start_time);
+            info!(
+                "Inner loop elapsed time for thread {:?}: {:?} ns",
+                tid, inner_loop_elpsed_time
+            );
         }
         txn_extend_wall.commit().await?;
     }
