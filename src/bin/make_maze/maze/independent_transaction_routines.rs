@@ -47,7 +47,8 @@ pub async fn select_my_thread_record_from_db(
     tid: &MazeThreadIdentifier,
 ) -> Result<thread_list::Model, Box<dyn std::error::Error>> {
     let txn = db.begin().await?;
-    let thread_record: thread_list::Model = select_my_thread_record_from_tx(&txn, tid).await?;
+    let thread_record: thread_list::Model =
+        select_my_thread_record_from_tx(&txn, tid.thread_id_as_str(), tid.unix_time()).await?;
     txn.commit().await?;
     Ok(thread_record)
 }

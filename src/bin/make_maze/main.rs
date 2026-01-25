@@ -5,6 +5,7 @@ use log::{LevelFilter, error, info, warn};
 use rs_maze_maker::common::database::connector::establish_connection;
 use rs_maze_maker::common::database::initializer::initialize_db;
 
+use crate::maze::connect_to_outside_wall::connect_all_not_connected_threads_to_outside_wall;
 use crate::maze::maze_thread::maze_thread_function;
 
 mod maze;
@@ -39,7 +40,7 @@ struct Args {
 async fn main() {
     // .envファイルから環境変数を読み込む
     dotenv().ok();
-    
+
     // ログ初期化
     env_logger::init();
 
@@ -47,6 +48,9 @@ async fn main() {
     let x = args.x_size;
     let y = args.y_size;
     let max_threads = args.number_of_threads;
+
+    // max_threadsの上限を64に設定
+    let max_threads = if max_threads > 64 { 64 } else { max_threads };
 
     let start_time = rs_maze_maker::common::util::get_now_unix_time();
     info!(
@@ -67,6 +71,9 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    info!("Database connection established successfully. Initializing database...");
+
     let initialize_db_res = initialize_db(&db_conn, x, y).await;
     match initialize_db_res {
         Ok(_) => info!("Database initialized successfully."),
@@ -80,6 +87,11 @@ async fn main() {
             std::process::exit(2);
         }
     }
+
+    info!(
+        "Initialize complete. Starting maze generation with {} threads...",
+        max_threads
+    );
 
     let local_set = tokio::task::LocalSet::new();
     local_set
@@ -102,6 +114,23 @@ async fn main() {
             }
         })
         .await;
+
+    let generate_wall_time_val =
+        rs_maze_maker::common::util::get_end_time_and_elapsed_time(start_time);
+    info!(
+        "Starting to connect all not connected threads to outside wall. Time after maze generation (UNIXTIME): {} Elapsed time (seconds): {}",
+        generate_wall_time_val.0, generate_wall_time_val.1
+    );
+
+    connect_all_not_connected_threads_to_outside_wall(&db_conn)
+        .await
+        .unwrap_or_else(|e| {
+            error!(
+                "Failed to connect all not connected threads to outside wall: {}",
+                e
+            );
+        });
+
     let end_time_val = rs_maze_maker::common::util::get_end_time_and_elapsed_time(start_time);
     info!(
         "Application ended with args: {:?} End time (UNIXTIME): {} Elapsed time (seconds): {}",

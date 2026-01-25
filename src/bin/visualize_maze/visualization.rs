@@ -49,9 +49,17 @@ pub async fn visualize_maze_to_png(
     // 各セルに色を設定
     for record in &records {
         let key = (record.cell_type.clone(), record.cell_owner_thread_id);
-        if let Some(&color) = color_map.get(&key) {
-            img.put_pixel(record.x as u32, record.y as u32, color);
-        }
+        let color = color_map.get(&key).copied().unwrap_or({
+            // デフォルト: セルタイプに基づいて色を決定
+            match record.cell_type.as_str() {
+                "WALL" | "PILLAR" => Rgba([0, 0, 0, 255]), // 黒
+                "PATH" => Rgba([255, 255, 255, 255]),      // 白
+                "START" | "END" => Rgba([255, 0, 0, 128]), // 半透明赤
+                "ROUTE" => Rgba([0, 255, 0, 128]),         // 半透明緑
+                _ => Rgba([128, 128, 128, 255]),           // その他はグレー
+            }
+        });
+        img.put_pixel(record.x as u32, record.y as u32, color);
     }
 
     // 画像を保存

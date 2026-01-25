@@ -1,3 +1,4 @@
+use log::info;
 use sea_orm::{DatabaseTransaction, EntityTrait, TransactionTrait};
 use strum::IntoStaticStr;
 
@@ -80,6 +81,9 @@ async fn initialize_maze_cell(
     x_max: u64,
     y_max: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cells = Vec::new();
+    const BATCH_SIZE: usize = 1000; // MySQLのプレースホルダー上限対策
+
     for x in 0..x_max {
         for y in 0..y_max {
             let new_start_point = crate::common::database::entities::maze_cell::ActiveModel {
@@ -87,10 +91,22 @@ async fn initialize_maze_cell(
                 y: sea_orm::ActiveValue::Set(y),
                 id: sea_orm::ActiveValue::NotSet,
             };
-            crate::common::database::entities::maze_cell::Entity::insert(new_start_point)
-                .exec(txn)
-                .await?;
+            cells.push(new_start_point);
+
+            // バッチサイズに達したら挿入
+            if cells.len() >= BATCH_SIZE {
+                crate::common::database::entities::maze_cell::Entity::insert_many(cells.drain(..))
+                    .exec(txn)
+                    .await?;
+            }
         }
+    }
+
+    // 残りのデータを挿入
+    if !cells.is_empty() {
+        crate::common::database::entities::maze_cell::Entity::insert_many(cells)
+            .exec(txn)
+            .await?;
     }
 
     Ok(())
@@ -124,10 +140,14 @@ async fn initialize_maze_field(
     let maze_cells = crate::common::database::entities::maze_cell::Entity::find()
         .all(txn)
         .await?;
+
+    let mut fields = Vec::new();
+    const BATCH_SIZE: usize = 1000; // MySQLのプレースホルダー上限対策
+
     for cell in maze_cells {
         let id = cell.id;
-        let x = cell.x as u64;
-        let y = cell.y as u64;
+        let x = cell.x;
+        let y = cell.y;
         let new_cell_type: String;
         if x % 2 == 0 && y % 2 == 0 {
             new_cell_type = MazeCellTypeEnum::PILLAR.to_string();
@@ -141,7 +161,19 @@ async fn initialize_maze_field(
             cell_type: sea_orm::ActiveValue::Set(new_cell_type),
             cell_owner_thread_id: sea_orm::ActiveValue::Set(None),
         };
-        crate::common::database::entities::maze_field::Entity::insert(new_field)
+        fields.push(new_field);
+
+        // バッチサイズに達したら挿入
+        if fields.len() >= BATCH_SIZE {
+            crate::common::database::entities::maze_field::Entity::insert_many(fields.drain(..))
+                .exec(txn)
+                .await?;
+        }
+    }
+
+    // 残りのデータを挿入
+    if !fields.is_empty() {
+        crate::common::database::entities::maze_field::Entity::insert_many(fields)
             .exec(txn)
             .await?;
     }
@@ -168,24 +200,29 @@ pub async fn initialize_db(
         )));
     }
 
+    info!("Starting database initialization");
+
     let txn = db.begin().await?;
 
-    // First, delete child tables that reference parent tables (foreign key constraints)
+    info!("First, delete child tables that reference parent tables (foreign key constraints)");
     erase_maze_field(&txn).await?;
     erase_thread_list(&txn).await?;
 
-    // Then delete and recreate parent tables
+    info!("Then delete and recreate parent tables");
     erase_maze_cell_type(&txn).await?;
     erase_maze_cell(&txn).await?;
     erase_outside_wall_connect_type(&txn).await?;
 
-    // Now recreate the data
+    info!("Now recreate the data");
     initialize_outside_wall_connect_type(&txn).await?;
     initialize_maze_cell_type(&txn).await?;
     initialize_maze_cell(&txn, x_max, y_max).await?;
     initialize_maze_field(&txn, x_max, y_max).await?;
 
     txn.commit().await?;
+
+    info!("Database initialization complete");
+
     Ok(())
 }
 
@@ -351,7 +388,7 @@ mod tests {
     #[test]
     fn test_cell_type_grid_layout() {
         // Test a small 5x5 grid comprehensively
-        // PILLAR: both x AND y are even (x%2==0 && y%2==0)
+        // PILLAR: both x AERROR make_maze] Failed to initialize database: Execution Error: error returned from database: 1390 (HY000): Prepared statement contains too many placeholders End time (UNIXTIME): 1769315381 Elapsed time (seconds): 1ND y are even (x%2==0 && y%2==0)
         // WALL: on boundary (x==0 || x==max-1 || y==0 || y==max-1) AND not PILLAR
         // PATH: everything else
         //

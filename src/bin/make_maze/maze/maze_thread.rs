@@ -3,9 +3,7 @@ use log::{debug, info, warn};
 use rs_maze_maker::common::maze_point::MazePoint;
 use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 use sea_orm::TransactionTrait;
-use std::collections::HashSet;
 
-use crate::maze::independent_transaction_routines::check_extendable_pillar_existance;
 use crate::maze::independent_transaction_routines::select_random_start_point_from_db;
 use crate::maze::move_next::get_adjacent_unused_extendable_pillar;
 use crate::maze::move_next::path_to_wall;
@@ -20,23 +18,34 @@ macro_rules! debug_maze_state {
 }
 
 pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn std::error::Error>> {
-    let mut tids: HashSet<MazeThreadIdentifier> = HashSet::new();
     // 未使用のスタートポイントがある場合のループ。
+    // ボトルネック対策: 定期的にコミットしてロックを解放
+    const OPERATIONS_PER_COMMIT: u32 = 50;
 
     loop {
         let mut maze_stack: Vec<MazePoint> = Vec::new();
         let tid = MazeThreadIdentifier::new();
-        if !check_extendable_pillar_existance(db).await? {
-            debug!("check_extendable_pillar_existance() = false break.");
-            break;
-        }
-        tids.insert(tid.clone());
-        maze_stack.push(select_random_start_point_from_db(db, &tid).await?);
+        let start_point_result = select_random_start_point_from_db(db, &tid).await;
+        let start_point = match start_point_result {
+            Ok(p) => p,
+            Err(e) => {
+                debug!(
+                    "No more unused start points available or error occurred: {:?}. Exiting maze thread. Current tid: {:?}",
+                    e, tid
+                );
+                break;
+            }
+        };
+        maze_stack.push(start_point);
+
+        let mut operation_count = 0;
+        let mut txn_extend_wall = db.begin().await?;
+
         loop {
             let current_pillar = match maze_stack.last() {
                 Some(p) => *p,
                 None => {
-                    warn!(
+                    info!(
                         "Maze stack is empty, breaking inner loop. {}",
                         debug_maze_state!(maze_stack, "None", &tid)
                     );
@@ -47,36 +56,39 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
                 "Loop start. {}",
                 debug_maze_state!(maze_stack, Some(current_pillar), &tid)
             );
-            let txn_unused_point = db.begin().await?;
             let next_pillar_result =
-                get_adjacent_unused_extendable_pillar(&txn_unused_point, &tid, &current_pillar)
+                get_adjacent_unused_extendable_pillar(&txn_extend_wall, &tid, &current_pillar)
                     .await;
             // エラーがあった場合はcontinueで再試行
             let next_pillar = match next_pillar_result {
                 Ok(p) => p,
                 Err(e) => {
-                    warn!(
+                    debug!(
                         "get_adjacent_unused_extendable_pillar() error. Pop current pillar and retry. : {:?}. {}",
                         e,
                         debug_maze_state!(maze_stack, Some(current_pillar), &tid)
                     );
                     maze_stack.pop();
-                    // スタックが空になった場合はコミットして内側のループを抜ける(すでに拡張可能な柱がないため)。
+                    // スタックが空になった場合は内側のループを抜けてコミットする(すでに拡張可能な柱がないため)。
                     if maze_stack.is_empty() {
-                        warn!(
+                        info!(
                             "Maze stack is empty after pop, breaking inner loop. {}",
                             debug_maze_state!(maze_stack, "None", &tid)
                         );
-                        txn_unused_point.commit().await?;
                         break;
                     } else {
-                        txn_unused_point.rollback().await?;
                         continue;
                     }
                 }
             };
-            let result_to_wall =
-                path_to_wall(&txn_unused_point, &tid, &current_pillar, &next_pillar).await;
+            let result_to_wall = path_to_wall(
+                &txn_extend_wall,
+                tid.thread_id_as_str(),
+                tid.unix_time(),
+                &current_pillar,
+                &next_pillar,
+            )
+            .await;
             // エラーがあった場合はcontinueで再試行
             match result_to_wall {
                 Ok(_) => {}
@@ -87,13 +99,24 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
                         debug_maze_state!(maze_stack, Some(current_pillar), &tid)
                     );
                     maze_stack.pop();
-                    txn_unused_point.rollback().await?;
                     continue;
                 }
             };
             maze_stack.push(next_pillar);
-            txn_unused_point.commit().await?;
+            operation_count += 1;
+
+            // 定期的にコミットしてロックを解放（ボトルネック対策）
+            if operation_count >= OPERATIONS_PER_COMMIT {
+                txn_extend_wall.commit().await?;
+                txn_extend_wall = db.begin().await?;
+                operation_count = 0;
+                debug!(
+                    "Committed batch, starting new transaction for thread {:?}",
+                    tid
+                );
+            }
         }
+        txn_extend_wall.commit().await?;
     }
     Ok(())
 }

@@ -12,7 +12,7 @@
 
 use log::{debug, info, warn};
 use rand::Rng;
-use rs_maze_maker::common::maze_point::select_between_points_without_edge;
+use rs_maze_maker::common::maze_point::select_bitweeb_points_and_from_adjacent;
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
 extern crate strum;
 
@@ -28,6 +28,8 @@ use rs_maze_maker::common::database::initializer::MazeCellTypeEnum;
 use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
 use rs_maze_maker::common::maze_point::MazePoint;
 use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
+
+static ADJACENT_PILLAR_DISTANCE: u64 = 2;
 
 macro_rules! debug_get_adjacent_extendable_pillar {
     ($tid:expr, $current_pillar:expr, $unused_points:expr) => {
@@ -65,12 +67,13 @@ pub async fn get_adjacent_unused_extendable_pillar(
     current_pillar: &MazePoint,
 ) -> Result<MazePoint, Box<dyn std::error::Error>> {
     // THREAD_LISTから、MazeThreadIdentifierの内容(THREAD_ID,CREATE_UNIXTIME)に当てはまるレコードを取得する。ない場合はエラー。
-    let thread_record = select_my_thread_record_from_tx(txn, tid).await?;
+    let thread_record =
+        select_my_thread_record_from_tx(txn, tid.thread_id_as_str(), tid.unix_time()).await?;
 
     //THREAD_FROM_OUTSIDE_WALL_VIEWから、MazeThreadIdentifierの内容に当てはまるレコードを取得する。
     let thread_from_outside_wall = is_this_thread_connect_outside_wall(txn, tid).await?;
 
-    let adjacent_pillars = current_pillar.generate_adjacent_maze_points(2);
+    let adjacent_pillars = current_pillar.generate_adjacent_maze_points(ADJACENT_PILLAR_DISTANCE);
     debug!(
         "{} Adjacent pillars candidates: {:?}",
         debug_get_adjacent_extendable_pillar!(tid, current_pillar, "N/A"),
@@ -112,7 +115,7 @@ pub async fn get_adjacent_unused_extendable_pillar(
         // OUTSIDE_WALL_START_POINTS_VIEWに、選択した要素の(X AND Y)が当てはまるレコードが存在するか確認する。
         if thread_from_outside_wall.0 && is_outside_wall_start_point {
             // 外壁から来た壁は外壁にはゆかないようにする。
-            info!(
+            debug!(
                 "{} this thread start from outside wall. Selected pillar is outside wall start point, skipping: {:?}",
                 debug_get_adjacent_extendable_pillar!(tid, current_pillar, unused_points),
                 selected_point
@@ -122,10 +125,11 @@ pub async fn get_adjacent_unused_extendable_pillar(
 
         // 選択した要素ともとの要素の間にあるセルを計算する。
         let selected_maze_point = MazePoint::new(selected_point.x, selected_point.y);
-        let bitween_cell = select_between_points_without_edge(current_pillar, &selected_maze_point);
+        let bitween_cell =
+            select_bitweeb_points_and_from_adjacent(current_pillar, &selected_maze_point, 1);
         if bitween_cell.len() != 1 {
             warn!(
-                "Invalid number of between cells: current_pillar=({},{}) selected_point=({},{}) between_cells={:?}",
+                "get_adjacent_unused_extendable_pillar: Invalid number of between cells: current_pillar=({},{}) selected_point=({},{}) between_cells={:?}",
                 current_pillar.x(),
                 current_pillar.y(),
                 selected_maze_point.x(),
@@ -178,7 +182,9 @@ pub async fn get_adjacent_unused_extendable_pillar(
                 outside_wall_connect_type: sea_orm::ActiveValue::Set(
                     OutsideWallConnectTypeEnum::DIRECT_CONNECT.to_string(),
                 ),
-                ..Default::default()
+                thread_id: sea_orm::ActiveValue::NotSet,
+                create_unixtime: sea_orm::ActiveValue::NotSet,
+                start_cell: sea_orm::ActiveValue::NotSet,
             };
             thread_list::Entity::update(update_model).exec(txn).await?;
             debug!(
@@ -212,20 +218,22 @@ pub async fn get_adjacent_unused_extendable_pillar(
 /// - データベースエラーが発生した場合
 pub async fn path_to_wall(
     txn: &DatabaseTransaction,
-    tid: &MazeThreadIdentifier,
+    my_thread_id: String,
+    my_create_unixtime: i64,
     current_pillar: &MazePoint,
     next_pillar: &MazePoint,
 ) -> Result<MazePoint, Box<dyn std::error::Error>> {
+    let my_thread_id = my_thread_id.clone();
     // THREAD_LISTから、MazeThreadIdentifierの内容(THREAD_ID,CREATE_UNIXTIME)に当てはまるレコードを取得する。ない場合はエラー。
-    let thread = select_my_thread_record_from_tx(txn, tid).await?;
+    let thread = select_my_thread_record_from_tx(txn, my_thread_id, my_create_unixtime).await?;
     let thread_id_from_table: u64 = thread.id;
 
     //current_pillarとnext_pillarの中間地点を計算する。
-    let bitween_cells = select_between_points_without_edge(current_pillar, next_pillar);
+    let bitween_cells = select_bitweeb_points_and_from_adjacent(current_pillar, next_pillar, 1);
     // 2個以上取得された場合はエラー。
     if bitween_cells.len() != 1 {
         // エラーメッセージにcurrent_pillar,next_pillar,bitween_cellsの内容を含める。
-        return Err(format!("Invalid number of between cells: current_pillar=({},{}) next_pillar=({},{}) between_cells={:?}", current_pillar.x(), current_pillar.y(), next_pillar.x(), next_pillar.y(), bitween_cells).into());
+        return Err(format!("path_to_wall: Invalid number of between cells: current_pillar=({},{}) next_pillar=({},{}) between_cells={:?}", current_pillar.x(), current_pillar.y(), next_pillar.x(), next_pillar.y(), bitween_cells).into());
     }
     let path_cell = bitween_cells[0];
     // 取得したレコードが未利用のPATHでなければエラー。
@@ -448,9 +456,14 @@ mod tests {
 
         // 9. path_to_wall()で開始点A,開始点Bの間のPATHをWALLに変更する。(中間点)
         info!("Step 9: Calling path_to_wall() to change PATH to WALL between start points A and B");
-        let intermediate_point =
-            crate::maze::move_next::path_to_wall(&txn2, &tid_a, &start_point_a, &start_point_b)
-                .await?;
+        let intermediate_point = crate::maze::move_next::path_to_wall(
+            &txn2,
+            tid_a.thread_id_as_str(),
+            tid_a.unix_time(),
+            &start_point_a,
+            &start_point_b,
+        )
+        .await?;
         info!(
             "  Intermediate point (changed to WALL): ({}, {})",
             intermediate_point.x(),
