@@ -7,15 +7,20 @@ use chrono::{DateTime, NaiveDateTime};
 use rand::Rng;
 use sea_orm::prelude::DateTimeUtc;
 
-use crate::common::{database::entities::thread_list, util::get_now_unix_time};
+use crate::common::{
+    database::{entities::thread_list, initializer::OutsideWallConnectTypeEnum},
+    util::get_now_unix_time,
+};
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct MazeThreadIdentifier {
     table_thread_id: u64,
     /// スレッドID（生成元スレッドの識別）
     tid_id: thread::ThreadId,
     /// UNIX時刻（ナノ秒精度）
     unix_time: i64,
+    // 参照ではなく所有する
+    outside_wall_connect_type: String,
 }
 
 impl MazeThreadIdentifier {
@@ -32,6 +37,7 @@ impl MazeThreadIdentifier {
             table_thread_id: 0,
             tid_id,
             unix_time,
+            outside_wall_connect_type: String::new(), // or "".to_string()
         }
     }
 
@@ -46,22 +52,28 @@ impl MazeThreadIdentifier {
         &self,
         record: thread_list::Model,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        if (self.thread_id_as_str() != record.thread_id)
-            || (self.unix_time() != record.create_unixtime)
-        {
+        let my_id = record.id;
+        let my_thread_id = record.thread_id.clone();
+        let my_create_unixtime = record.create_unixtime;
+        // 所有権を獲得
+        let my_outside_wall_connect_type = record.outside_wall_connect_type.clone();
+
+        if (self.thread_id_as_str() != my_thread_id) || (self.unix_time() != my_create_unixtime) {
             return Err(format!(
                 "Mismatch in thread identifier. Expected: {}_{}, Found: {}_{}",
                 self.thread_id_as_str(),
                 self.unix_time(),
-                record.thread_id,
-                record.create_unixtime
+                my_thread_id,
+                my_create_unixtime
             )
             .into());
         }
-        Ok(Self {
-            table_thread_id: record.id,
+
+        Ok(MazeThreadIdentifier {
+            table_thread_id: my_id as u64,
             tid_id: self.tid_id,
             unix_time: self.unix_time,
+            outside_wall_connect_type: my_outside_wall_connect_type,
         })
     }
 }
@@ -87,6 +99,14 @@ impl MazeThreadIdentifier {
     }
     pub fn as_str(&self) -> String {
         format!("{}_{}", self.thread_id_as_str(), self.unix_time)
+    }
+    pub fn outside_wall_connect_type(&self) -> &str {
+        &self.outside_wall_connect_type
+    }
+    pub fn get_outside_wall_connect_type_enum(
+        &self,
+    ) -> Result<OutsideWallConnectTypeEnum, strum::ParseError> {
+        self.outside_wall_connect_type.parse()
     }
 }
 

@@ -1,6 +1,14 @@
 use log::info;
 use sea_orm::{DatabaseTransaction, EntityTrait, TransactionTrait};
-use strum::IntoStaticStr;
+use strum_macros::{AsRefStr, Display, EnumString};
+
+#[derive(Debug, PartialEq, Display, EnumString, AsRefStr, Clone, Copy)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")] // DB文字列に合わせる
+pub enum OutsideWallConnectTypeEnum {
+    DIRECT_CONNECT,
+    INDIRECT_CONNECT,
+    NOT_CONNECT,
+}
 
 async fn erase_maze_field(txn: &DatabaseTransaction) -> Result<(), sea_orm::DbErr> {
     crate::common::database::entities::maze_field::Entity::delete_many()
@@ -37,12 +45,6 @@ async fn erase_maze_cell_type(txn: &DatabaseTransaction) -> Result<(), sea_orm::
     Ok(())
 }
 
-#[derive(Debug, PartialEq, strum::Display)]
-pub enum OutsideWallConnectTypeEnum {
-    DIRECT_CONNECT,
-    INDIRECT_CONNECT,
-    NOT_CONNECT,
-}
 async fn initialize_outside_wall_connect_type(
     txn: &DatabaseTransaction,
 ) -> Result<(), sea_orm::DbErr> {
@@ -66,7 +68,8 @@ async fn initialize_outside_wall_connect_type(
     Ok(())
 }
 
-#[derive(Debug, PartialEq, strum::Display)]
+#[derive(Debug, PartialEq, Display, EnumString, AsRefStr)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum MazeCellTypeEnum {
     WALL,
     PATH,
