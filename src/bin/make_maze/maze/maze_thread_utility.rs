@@ -60,6 +60,14 @@ pub async fn select_my_thread_record_from_tx(
     Ok(thread_record)
 }
 
+
+
+
+
+
+
+
+
 /// データベースから最大1000件の未使用の柱（開始点）を取得します。
 ///
 /// # 引数

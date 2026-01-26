@@ -208,6 +208,29 @@ pub async fn populate_temp_unused_start_points(
     Ok(())
 }
 
+pub async fn populate_temp_unused_start_points_count(
+    txn: &DatabaseTransaction,
+) -> Result<(), sea_orm::DbErr> {
+    let truncate_sql = "TRUNCATE TABLE TEMP_UNUSED_START_POINTS_COUNT";
+    txn.execute(Statement::from_string(
+        DatabaseBackend::MySql,
+        truncate_sql.to_string(),
+    ))
+    .await?;
+
+    let insert_sql = "INSERT INTO TEMP_UNUSED_START_POINTS_COUNT (COUNT) \
+                      SELECT COUNT FROM UNUSED_START_POINTS_COUNT_VIEW";
+    txn.execute(Statement::from_string(
+        DatabaseBackend::MySql,
+        insert_sql.to_string(),
+    ))
+    .await?;
+
+    Ok(())
+}
+
+
+
 pub async fn initialize_db(
     db: &sea_orm::DbConn,
     x_max: u64,
@@ -246,7 +269,7 @@ pub async fn initialize_db(
     initialize_maze_cell(&txn, x_max, y_max).await?;
     initialize_maze_field(&txn, x_max, y_max).await?;
     populate_temp_unused_start_points(&txn).await?;
-
+    populate_temp_unused_start_points_count(&txn).await?;
     txn.commit().await?;
 
     info!("Database initialization complete");
