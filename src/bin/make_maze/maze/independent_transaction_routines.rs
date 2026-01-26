@@ -1,5 +1,8 @@
 use log::debug;
+use log::info;
+use log::warn;
 use rand::Rng;
+use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points_count;
 use sea_orm::{ColumnTrait, DbConn, EntityTrait, PaginatorTrait, QueryFilter, TransactionTrait};
 
 use rs_maze_maker::common::database::entities::thread_list;
@@ -8,8 +11,8 @@ use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
 use rs_maze_maker::common::maze_point::MazePoint;
 use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 
-use crate::maze::maze_thread_utility::get_1000_unused_pillars;
 use crate::maze::maze_thread_utility::get_pillar;
+use crate::maze::maze_thread_utility::get_single_unused_start_point_by_line_number_candidate;
 use crate::maze::maze_thread_utility::is_point_outside_wall;
 use crate::maze::maze_thread_utility::select_my_thread_record_from_tx;
 
@@ -53,32 +56,55 @@ pub async fn select_my_thread_record_from_db(
     Ok(thread_record)
 }
 
+pub async fn select_random_start_point(
+    db: &DbConn,
+) -> Result<unused_start_points_view::Model, Box<dyn std::error::Error>> {
+    let res: unused_start_points_view::Model;
+    loop {
+        let txn = db.begin().await?;
+        let unused_start_point_res_first_try =
+            get_single_unused_start_point_by_line_number_candidate(&txn).await;
+        match unused_start_point_res_first_try {
+            Ok(point) => {
+                res = point;
+                txn.commit().await?;
+                break;
+            }
+            Err(e) => {
+                warn!(
+                    "First attempt to get random unused start point failed, retrying...: {}",
+                    e
+                );
+                // 取得できなかったらキャッシュを再作成してリトライする。
+                populate_temp_unused_start_points_count(&txn).await?;
+                populate_temp_unused_start_points_count(&txn).await?;
+                txn.commit().await?;
+                continue;
+            }
+        };
+    }
+    info!(
+        "Successfully selected random unused start point: cell_id={}, x={}, y={}",
+        res.cell_id, res.x, res.y
+    );
+    Ok(res)
+}
+
 /// 未使用の開始ポイントをランダムに選択し、THREAD_LISTテーブルに新しいスレッドレコードを追加する。
 /// 選択された開始ポイントの座標をMazePointとして返す。
 pub async fn select_random_start_point_from_db(
     db: &DbConn,
     tid: &MazeThreadIdentifier,
 ) -> Result<MazePoint, Box<dyn std::error::Error>> {
-    let txn = db.begin().await?;
-
-    // UNUSED_START_POINTS_VIEWを全件取得する。
-    let unused_start_points: Vec<unused_start_points_view::Model> =
-        get_1000_unused_pillars(&txn).await?;
-
-    if unused_start_points.is_empty() {
-        return Err("No unused start points available.".into());
-    }
-
-    // ランダムに1件選択する。
-    let mut rng = rand::rng();
-    let random_index = rng.random_range(0..unused_start_points.len());
-    let selected_point = &unused_start_points[random_index];
+    // UNUSED_START_POINTS_VIEWからランダムに1件選択する。
+    let selected_point = select_random_start_point(db).await?;
     let selected_cell_id = selected_point.cell_id;
     let x = selected_point.x;
     let y = selected_point.y;
     let tid_str = tid.thread_id_as_str();
     let unix_time = tid.unix_time();
 
+    let txn = db.begin().await?;
     let selected_maze_point = MazePoint::new(x, y);
     let is_outside = is_point_outside_wall(&txn, &selected_maze_point).await;
 

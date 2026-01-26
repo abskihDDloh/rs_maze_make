@@ -30,7 +30,7 @@ CREATE TABLE `MAZE_CELL` (
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_CELL` (`X`,`Y`) USING BTREE,
   UNIQUE KEY `UNIQUE_ALL` (`ID`,`X`,`Y`)
-) ENGINE=InnoDB AUTO_INCREMENT=8035037 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=8115839 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -168,7 +168,7 @@ DROP TABLE IF EXISTS `TEMP_UNUSED_START_POINTS`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `TEMP_UNUSED_START_POINTS` (
-  `CELL_ID` bigint(20) NOT NULL,
+  `CELL_ID` bigint(20) unsigned NOT NULL,
   PRIMARY KEY (`CELL_ID`)
 ) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -522,4 +522,4 @@ SET character_set_client = @saved_cs_client;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-26 19:51:34
+-- Dump completed on 2026-01-26 21:28:48
