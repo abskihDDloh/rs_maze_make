@@ -30,7 +30,7 @@ CREATE TABLE `MAZE_CELL` (
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UNIQUE_CELL` (`X`,`Y`) USING BTREE,
   UNIQUE KEY `UNIQUE_ALL` (`ID`,`X`,`Y`)
-) ENGINE=InnoDB AUTO_INCREMENT=7639981 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=8115839 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -161,6 +161,32 @@ SET character_set_client = utf8mb4;
 SET character_set_client = @saved_cs_client;
 
 --
+-- Table structure for table `TEMP_UNUSED_START_POINTS`
+--
+
+DROP TABLE IF EXISTS `TEMP_UNUSED_START_POINTS`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `TEMP_UNUSED_START_POINTS` (
+  `CELL_ID` bigint(20) unsigned NOT NULL,
+  PRIMARY KEY (`CELL_ID`)
+) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `TEMP_UNUSED_START_POINTS_COUNT`
+--
+
+DROP TABLE IF EXISTS `TEMP_UNUSED_START_POINTS_COUNT`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `TEMP_UNUSED_START_POINTS_COUNT` (
+  `UNUSED_START_POINTS` bigint(20) unsigned NOT NULL,
+  PRIMARY KEY (`UNUSED_START_POINTS`)
+) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Temporary table structure for view `THREAD_FIRST_CELLS_LIST_VIEW`
 --
 
@@ -217,8 +243,20 @@ CREATE TABLE `THREAD_LIST` (
   KEY `FK_OUTSIDE_WALL_CONNECT` (`OUTSIDE_WALL_CONNECT_TYPE`),
   CONSTRAINT `FK_OUTSIDE_WALL_CONNECT` FOREIGN KEY (`OUTSIDE_WALL_CONNECT_TYPE`) REFERENCES `OUTSIDE_WALL_CONNECT_TYPE` (`TYPE`),
   CONSTRAINT `FK_START_CELL` FOREIGN KEY (`START_CELL`) REFERENCES `MAZE_CELL` (`ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=7424 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB AUTO_INCREMENT=11757 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Temporary table structure for view `UNUSED_START_POINTS_COUNT_VIEW`
+--
+
+DROP TABLE IF EXISTS `UNUSED_START_POINTS_COUNT_VIEW`;
+/*!50001 DROP VIEW IF EXISTS `UNUSED_START_POINTS_COUNT_VIEW`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8mb4;
+/*!50001 CREATE VIEW `UNUSED_START_POINTS_COUNT_VIEW` AS SELECT
+ 1 AS `UNUSED_START_POINTS` */;
+SET character_set_client = @saved_cs_client;
 
 --
 -- Temporary table structure for view `UNUSED_START_POINTS_VIEW`
@@ -404,6 +442,24 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET collation_connection      = @saved_col_connection */;
 
 --
+-- Final view structure for view `UNUSED_START_POINTS_COUNT_VIEW`
+--
+
+/*!50001 DROP VIEW IF EXISTS `UNUSED_START_POINTS_COUNT_VIEW`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
+/*!50001 VIEW `UNUSED_START_POINTS_COUNT_VIEW` AS select count(`UNUSED_START_POINTS_VIEW`.`CELL_ID`) AS `UNUSED_START_POINTS` from `UNUSED_START_POINTS_VIEW` */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
 -- Final view structure for view `UNUSED_START_POINTS_VIEW`
 --
 
@@ -466,4 +522,4 @@ SET character_set_client = @saved_cs_client;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-25 16:40:05
+-- Dump completed on 2026-01-26 21:28:48

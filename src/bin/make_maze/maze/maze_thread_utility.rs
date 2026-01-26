@@ -12,6 +12,10 @@
 
 use log::debug;
 use log::info;
+use rand::Rng;
+use rs_maze_maker::common::database::entities::temp_unused_start_points;
+use rs_maze_maker::common::database::entities::temp_unused_start_points_count;
+use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points_count;
 use sea_orm::QuerySelect;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
@@ -60,23 +64,60 @@ pub async fn select_my_thread_record_from_tx(
     Ok(thread_record)
 }
 
-/// データベースから最大1000件の未使用の柱（開始点）を取得します。
-///
-/// # 引数
-/// * `txn` - データベーストランザクション
-///
-/// # 戻り値
-/// 未使用開始点ビューのモデルのベクタ、またはエラー
-pub async fn get_1000_unused_pillars(
+pub async fn get_unused_points_count_from_temp_records(
     txn: &DatabaseTransaction,
-) -> Result<Vec<unused_start_points_view::Model>, Box<dyn std::error::Error>> {
-    // UNUSED_START_POINTS_VIEWを1000件取得する。
-    let unused_start_points: Vec<unused_start_points_view::Model> =
-        unused_start_points_view::Entity::find()
-            .limit(1000)
-            .all(txn)
-            .await?;
-    Ok(unused_start_points)
+) -> Result<u64, Box<dyn std::error::Error>> {
+    // TEMP_UNUSED_START_POINTS_COUNTのレコードを全件取得する。
+    let temp_count_records = temp_unused_start_points_count::Entity::find()
+        .all(txn)
+        .await?;
+    //１行ではない場合はエラー。
+    if temp_count_records.len() != 1 {
+        return Err(format!(
+            "TEMP_UNUSED_START_POINTS_COUNT should have exactly one record, but found {} records.",
+            temp_count_records.len()
+        )
+        .into());
+    }
+    let count = temp_count_records[0].unused_start_points;
+    Ok(count)
+}
+
+pub async fn generate_random_unused_start_point_line_number_from_temp_records(
+    txn: &DatabaseTransaction,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let count = get_unused_points_count_from_temp_records(txn).await?;
+    if count == 0 {
+        return Err("No unused start points available".into());
+    }
+    // ランダムなオフセットを生成（0からcount-1の範囲）
+    let random_offset = rand::rng().random_range(0..count);
+    Ok(random_offset)
+}
+
+// 効率的な実装例
+pub async fn get_random_unused_start_point_by_line_number_candidate(
+    txn: &DatabaseTransaction,
+) -> Result<unused_start_points_view::Model, Box<dyn std::error::Error>> {
+    let line_number = generate_random_unused_start_point_line_number_from_temp_records(txn).await?;
+    debug!("Generated random line number: {}", line_number);
+    // 1. MEMORYテーブルからCELL_IDだけを高速取得
+    let cell_id: u64 = temp_unused_start_points::Entity::find()
+        .limit(1)
+        .offset(line_number)
+        .one(txn)
+        .await?
+        .ok_or("No unused start point found")?
+        .cell_id;
+    debug!("Selected CELL_ID: {}", cell_id);
+    // 2. CELL_IDを使って必要な情報を取得（インデックスで高速）
+    let unused_start_point = unused_start_points_view::Entity::find()
+        .filter(unused_start_points_view::Column::CellId.eq(cell_id))
+        .one(txn)
+        .await?
+        .ok_or("Cell details not found")?;
+
+    Ok(unused_start_point)
 }
 
 /// 指定された柱のリストの中から、未使用の柱を検索します。

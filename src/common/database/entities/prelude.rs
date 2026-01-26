@@ -9,6 +9,8 @@ pub use super::maze_field::Entity as MazeField;
 pub use super::outside_wall_connect_type::Entity as OutsideWallConnectType;
 pub use super::outside_wall_start_points_view::Entity as OutsideWallStartPointsView;
 pub use super::start_points_view::Entity as StartPointsView;
+pub use super::temp_unused_start_points::Entity as TempUnusedStartPoints;
+pub use super::temp_unused_start_points_count::Entity as TempUnusedStartPointsCount;
 pub use super::thread_from_outside_wall_view::Entity as ThreadFromOutsideWallView;
 pub use super::thread_list::Entity as ThreadList;
 pub use super::unused_start_points_view::Entity as UnusedStartPointsView;

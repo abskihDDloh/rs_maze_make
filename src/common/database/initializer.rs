@@ -1,5 +1,7 @@
 use log::info;
-use sea_orm::{DatabaseTransaction, EntityTrait, TransactionTrait};
+use sea_orm::{
+    ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, Statement, TransactionTrait,
+};
 use strum_macros::{AsRefStr, Display, EnumString};
 
 #[derive(Debug, PartialEq, Display, EnumString, AsRefStr, Clone, Copy)]
@@ -184,6 +186,49 @@ async fn initialize_maze_field(
     Ok(())
 }
 
+// Populate TEMP_UNUSED_START_POINTS with the current unused start points
+pub async fn populate_temp_unused_start_points(
+    txn: &DatabaseTransaction,
+) -> Result<(), sea_orm::DbErr> {
+    let truncate_sql = "TRUNCATE TABLE TEMP_UNUSED_START_POINTS";
+    txn.execute(Statement::from_string(
+        DatabaseBackend::MySql,
+        truncate_sql.to_string(),
+    ))
+    .await?;
+
+    let insert_sql = "INSERT INTO TEMP_UNUSED_START_POINTS (CELL_ID) \
+                      SELECT CELL_ID FROM UNUSED_START_POINTS_VIEW";
+    txn.execute(Statement::from_string(
+        DatabaseBackend::MySql,
+        insert_sql.to_string(),
+    ))
+    .await?;
+
+    Ok(())
+}
+
+pub async fn populate_temp_unused_start_points_count(
+    txn: &DatabaseTransaction,
+) -> Result<(), sea_orm::DbErr> {
+    let truncate_sql = "TRUNCATE TABLE TEMP_UNUSED_START_POINTS_COUNT";
+    txn.execute(Statement::from_string(
+        DatabaseBackend::MySql,
+        truncate_sql.to_string(),
+    ))
+    .await?;
+
+    let insert_sql = "INSERT INTO TEMP_UNUSED_START_POINTS_COUNT (UNUSED_START_POINTS) \
+                      SELECT UNUSED_START_POINTS FROM UNUSED_START_POINTS_COUNT_VIEW";
+    txn.execute(Statement::from_string(
+        DatabaseBackend::MySql,
+        insert_sql.to_string(),
+    ))
+    .await?;
+
+    Ok(())
+}
+
 pub async fn initialize_db(
     db: &sea_orm::DbConn,
     x_max: u64,
@@ -221,7 +266,8 @@ pub async fn initialize_db(
     initialize_maze_cell_type(&txn).await?;
     initialize_maze_cell(&txn, x_max, y_max).await?;
     initialize_maze_field(&txn, x_max, y_max).await?;
-
+    populate_temp_unused_start_points(&txn).await?;
+    populate_temp_unused_start_points_count(&txn).await?;
     txn.commit().await?;
 
     info!("Database initialization complete");

@@ -1,0 +1,13 @@
+use sea_orm::entity::prelude::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
+#[sea_orm(table_name = "TEMP_UNUSED_START_POINTS")]
+pub struct Model {
+    #[sea_orm(primary_key, column_name = "CELL_ID", auto_increment = false)]
+    pub cell_id: u64,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
