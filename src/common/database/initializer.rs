@@ -229,8 +229,6 @@ pub async fn populate_temp_unused_start_points_count(
     Ok(())
 }
 
-
-
 pub async fn initialize_db(
     db: &sea_orm::DbConn,
     x_max: u64,
