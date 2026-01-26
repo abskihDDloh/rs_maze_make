@@ -218,8 +218,8 @@ pub async fn populate_temp_unused_start_points_count(
     ))
     .await?;
 
-    let insert_sql = "INSERT INTO TEMP_UNUSED_START_POINTS_COUNT (COUNT) \
-                      SELECT COUNT FROM UNUSED_START_POINTS_COUNT_VIEW";
+    let insert_sql = "INSERT INTO TEMP_UNUSED_START_POINTS_COUNT (UNUSED_START_POINTS) \
+                      SELECT UNUSED_START_POINTS FROM UNUSED_START_POINTS_COUNT_VIEW";
     txn.execute(Statement::from_string(
         DatabaseBackend::MySql,
         insert_sql.to_string(),

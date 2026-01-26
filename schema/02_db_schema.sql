@@ -181,7 +181,8 @@ DROP TABLE IF EXISTS `TEMP_UNUSED_START_POINTS_COUNT`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `TEMP_UNUSED_START_POINTS_COUNT` (
-  `COUNT` bigint(20) NOT NULL
+  `UNUSED_START_POINTS` bigint(20) unsigned NOT NULL,
+  PRIMARY KEY (`UNUSED_START_POINTS`)
 ) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -254,7 +255,7 @@ DROP TABLE IF EXISTS `UNUSED_START_POINTS_COUNT_VIEW`;
 SET @saved_cs_client     = @@character_set_client;
 SET character_set_client = utf8mb4;
 /*!50001 CREATE VIEW `UNUSED_START_POINTS_COUNT_VIEW` AS SELECT
- 1 AS `COUNT` */;
+ 1 AS `UNUSED_START_POINTS` */;
 SET character_set_client = @saved_cs_client;
 
 --
@@ -453,7 +454,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50013 DEFINER=`mazemake_u`@`localhost` SQL SECURITY INVOKER */
-/*!50001 VIEW `UNUSED_START_POINTS_COUNT_VIEW` AS select count(`UNUSED_START_POINTS_VIEW`.`CELL_ID`) AS `COUNT` from `UNUSED_START_POINTS_VIEW` */;
+/*!50001 VIEW `UNUSED_START_POINTS_COUNT_VIEW` AS select count(`UNUSED_START_POINTS_VIEW`.`CELL_ID`) AS `UNUSED_START_POINTS` from `UNUSED_START_POINTS_VIEW` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -521,4 +522,4 @@ SET character_set_client = @saved_cs_client;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-26 19:40:59
+-- Dump completed on 2026-01-26 19:51:34
