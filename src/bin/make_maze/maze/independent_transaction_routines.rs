@@ -138,6 +138,35 @@ mod tests {
     use rs_maze_maker::common::database::connector::establish_connection;
     use rs_maze_maker::common::database::initializer::initialize_db;
 
+    async fn check_extendable_pillar_existance(
+        db: &sea_orm::DbConn,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        // UNUSED_START_POINTS_VIEWのレコード数が0であればfalse、そうでない場合はtrueを返す。
+        let unused_count: u64 = unused_start_points_view::Entity::find().count(db).await?;
+        debug!("Unused start points count: {}", unused_count);
+        Ok(unused_count > 0)
+    }
+
+    /// THREAD_LISTにおけるOUTSIDE_WALL_CONNECT_TYPE='NOT_CONNECT'のレコード数が0であればfalse、そうでない場合はtrueを返す。
+    /// これは、外壁接続タイプが「接続しない」のスレッドが存在するかどうかを確認するために使用される。
+    async fn check_not_connect_outside_wall_thread_existance(
+        db: &sea_orm::DbConn,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let not_connect_count: u64 = thread_list::Entity::find()
+            .filter(
+                thread_list::Column::OutsideWallConnectType
+                    .eq(OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()),
+            )
+            .count(db)
+            .await?;
+
+        debug!(
+            "Threads with OUTSIDE_WALL_CONNECT_TYPE='NOT_CONNECT' count: {}",
+            not_connect_count
+        );
+
+        Ok(not_connect_count > 0)
+    }
     #[tokio::test]
     #[test_log::test]
     #[ignore] // DATABASE_URL が必要なため
