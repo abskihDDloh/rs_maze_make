@@ -1,7 +1,10 @@
+use std::thread;
+
 use log::debug;
 use log::info;
 use log::warn;
 use rand::Rng;
+use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points;
 use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points_count;
 use sea_orm::{ColumnTrait, DbConn, EntityTrait, PaginatorTrait, QueryFilter, TransactionTrait};
 
@@ -12,37 +15,10 @@ use rs_maze_maker::common::maze_point::MazePoint;
 use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 
 use crate::maze::maze_thread_utility::get_pillar;
-use crate::maze::maze_thread_utility::get_single_unused_start_point_by_line_number_candidate;
+use crate::maze::maze_thread_utility::get_random_unused_start_point_by_line_number_candidate;
+use crate::maze::maze_thread_utility::get_unused_points_count_from_temp_records;
 use crate::maze::maze_thread_utility::is_point_outside_wall;
 use crate::maze::maze_thread_utility::select_my_thread_record_from_tx;
-
-pub async fn check_extendable_pillar_existance(
-    db: &sea_orm::DbConn,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    // UNUSED_START_POINTS_VIEWのレコード数が0であればfalse、そうでない場合はtrueを返す。
-    let unused_count: u64 = unused_start_points_view::Entity::find().count(db).await?;
-    debug!("Unused start points count: {}", unused_count);
-    Ok(unused_count > 0)
-}
-
-/// THREAD_LISTにおけるOUTSIDE_WALL_CONNECT_TYPE='NOT_CONNECT'のレコード数が0であればfalse、そうでない場合はtrueを返す。
-/// これは、外壁接続タイプが「接続しない」のスレッドが存在するかどうかを確認するために使用される。
-pub async fn check_not_connect_outside_wall_thread_existance(
-    db: &sea_orm::DbConn,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let not_connect_count: u64 = thread_list::Entity::find()
-        .filter(
-            thread_list::Column::OutsideWallConnectType
-                .eq(OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()),
-        )
-        .count(db)
-        .await?;
-    debug!(
-        "Threads with OUTSIDE_WALL_CONNECT_TYPE='NOT_CONNECT' count: {}",
-        not_connect_count
-    );
-    Ok(not_connect_count > 0)
-}
 
 // THREAD_LISTテーブルから自分のスレッドIDに対応するレコードを持ってくる。
 pub async fn select_my_thread_record_from_db(
@@ -62,28 +38,33 @@ pub async fn select_random_start_point(
     let res: unused_start_points_view::Model;
     loop {
         let txn = db.begin().await?;
-        let unused_start_point_res_first_try =
-            get_single_unused_start_point_by_line_number_candidate(&txn).await;
-        match unused_start_point_res_first_try {
+        let unused_start_points = get_unused_points_count_from_temp_records(&txn).await?;
+        if unused_start_points == 0 {
+            txn.commit().await?;
+            return Err("No unused start points available".into());
+        }
+        let unused_start_point_res =
+            get_random_unused_start_point_by_line_number_candidate(&txn).await;
+        match unused_start_point_res {
             Ok(point) => {
                 res = point;
                 txn.commit().await?;
                 break;
             }
             Err(e) => {
-                warn!(
+                debug!(
                     "First attempt to get random unused start point failed, retrying...: {}",
                     e
                 );
                 // 取得できなかったらキャッシュを再作成してリトライする。
-                populate_temp_unused_start_points_count(&txn).await?;
+                populate_temp_unused_start_points(&txn).await?;
                 populate_temp_unused_start_points_count(&txn).await?;
                 txn.commit().await?;
                 continue;
             }
         };
     }
-    info!(
+    debug!(
         "Successfully selected random unused start point: cell_id={}, x={}, y={}",
         res.cell_id, res.x, res.y
     );
