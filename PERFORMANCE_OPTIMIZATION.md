@@ -1,5 +1,41 @@
 # maze_thread_function() パフォーマンス最適化ガイド
 
+## 即座に実行可能な最適化
+
+### 1. データベースインデックスの追加（最も効果的）
+
+**効果**: 3-10倍の高速化が期待できる  
+**実装難易度**: 低（SQLを実行するだけ）
+
+```bash
+# データベースに接続してインデックスを追加
+mysql -u your_user -p MAZEMAKE < schema/03_performance_indexes.sql
+```
+
+このインデックス追加により、以下のクエリが高速化されます：
+- `UNUSED_START_POINTS_VIEW`の検索
+- `MAZE_FIELD`での`CELL_TYPE`と`CELL_OWNER_THREAD_ID`による検索
+- 未使用PILLARの検索
+
+### 2. バッチトランザクションサイズの調整
+
+**現状**: `OPERATIONS_PER_COMMIT = 25`
+
+環境に応じて調整：
+- **小さい値（10-20）**: ロック競合が多い環境、複数スレッド実行時
+- **大きい値（50-100）**: シングルスレッド、ロック競合が少ない環境
+
+[src/bin/make_maze/maze/maze_thread.rs](src/bin/make_maze/maze/maze_thread.rs#L25) で変更可能
+
+### 3. データベース接続プールの設定確認
+
+`Cargo.toml`または接続時の設定で：
+```rust
+// 接続プールサイズを増やす
+max_connections = 10
+min_connections = 2
+```
+
 ## 特定されたボトルネック
 
 ### 1. トランザクションのオーバーヘッド（最大の問題）
