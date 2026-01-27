@@ -1,12 +1,8 @@
-use std::thread;
 
 use log::debug;
-use log::info;
-use log::warn;
-use rand::Rng;
 use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points;
 use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points_count;
-use sea_orm::{ColumnTrait, DbConn, EntityTrait, PaginatorTrait, QueryFilter, TransactionTrait};
+use sea_orm::{DbConn, EntityTrait, TransactionTrait};
 
 use rs_maze_maker::common::database::entities::thread_list;
 use rs_maze_maker::common::database::entities::unused_start_points_view;
@@ -124,6 +120,7 @@ pub async fn select_random_start_point_from_db(
 #[cfg(test)]
 mod tests {
     use log::info;
+    use sea_orm::{ColumnTrait, PaginatorTrait, QueryFilter};
 
     use crate::maze::maze_thread_utility::select_my_thread_record_from_tx;
 
