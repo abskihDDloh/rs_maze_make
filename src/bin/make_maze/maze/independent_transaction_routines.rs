@@ -12,27 +12,14 @@ use rs_maze_maker::common::database::entities::thread_list;
 use rs_maze_maker::common::database::entities::unused_start_points_view;
 use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
 use rs_maze_maker::common::maze_point::MazePoint;
-use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 
+use crate::maze::maze_thread_identifier::MazeThreadIdentifier;
 use crate::maze::maze_thread_utility::get_pillar;
 use crate::maze::maze_thread_utility::get_random_unused_start_point_by_line_number_candidate;
 use crate::maze::maze_thread_utility::get_unused_points_count_from_temp_records;
 use crate::maze::maze_thread_utility::is_point_outside_wall;
-use crate::maze::maze_thread_utility::select_my_thread_record_from_tx;
 
-// THREAD_LISTテーブルから自分のスレッドIDに対応するレコードを持ってくる。
-pub async fn select_my_thread_record_from_db(
-    db: &DbConn,
-    tid: &MazeThreadIdentifier,
-) -> Result<thread_list::Model, Box<dyn std::error::Error>> {
-    let txn = db.begin().await?;
-    let thread_record: thread_list::Model =
-        select_my_thread_record_from_tx(&txn, tid.thread_id_as_str(), tid.unix_time()).await?;
-    txn.commit().await?;
-    Ok(thread_record)
-}
-
-pub async fn select_random_start_point(
+async fn select_random_start_point(
     db: &DbConn,
 ) -> Result<unused_start_points_view::Model, Box<dyn std::error::Error>> {
     let res: unused_start_points_view::Model;
@@ -72,18 +59,21 @@ pub async fn select_random_start_point(
 }
 
 /// 未使用の開始ポイントをランダムに選択し、THREAD_LISTテーブルに新しいスレッドレコードを追加する。
-/// 選択された開始ポイントの座標をMazePointとして返す。
+/// # 引数
+/// * `db` - データベース接続
+/// # 戻り値
+/// 選択された開始ポイントのMazePointと対応するMazeThreadIdentifierのタプル
 pub async fn select_random_start_point_from_db(
     db: &DbConn,
-    tid: &MazeThreadIdentifier,
-) -> Result<MazePoint, Box<dyn std::error::Error>> {
+) -> Result<(MazePoint, MazeThreadIdentifier), Box<dyn std::error::Error>> {
+    let pre_tid = MazeThreadIdentifier::new();
     // UNUSED_START_POINTS_VIEWからランダムに1件選択する。
     let selected_point = select_random_start_point(db).await?;
     let selected_cell_id = selected_point.cell_id;
     let x = selected_point.x;
     let y = selected_point.y;
-    let tid_str = tid.thread_id_as_str();
-    let unix_time = tid.unix_time();
+    let tid_str = pre_tid.thread_id_as_str();
+    let unix_time = pre_tid.unix_time();
 
     let txn = db.begin().await?;
     let selected_maze_point = MazePoint::new(x, y);
@@ -113,6 +103,7 @@ pub async fn select_random_start_point_from_db(
     .await?;
     // 追加したスレッドレコードのID列を取得する。
     let _new_thread_id = result.last_insert_id;
+    let post_tid = pre_tid.fill_info(_new_thread_id, outside_wall_connect_type.to_string());
 
     // selected_cell_idに当てはまるMAZE_FIELDのCELL_TYPEがPILLARかつCELL_OWNER_THREAD_IDがNullの場合にかぎり、CELL_OWNER_THREAD_IDを_new_thread_idに更新する。
     let _pillar_update_result = get_pillar(&txn, selected_cell_id, _new_thread_id).await?;
@@ -127,12 +118,14 @@ pub async fn select_random_start_point_from_db(
         outside_wall_connect_type,
         _pillar_update_result
     );
-    Ok(MazePoint::new(x, y))
+    Ok((MazePoint::new(x, y), post_tid))
 }
 
 #[cfg(test)]
 mod tests {
     use log::info;
+
+    use crate::maze::maze_thread_utility::select_my_thread_record_from_tx;
 
     use super::*;
     use rs_maze_maker::common::database::connector::establish_connection;
@@ -167,6 +160,19 @@ mod tests {
 
         Ok(not_connect_count > 0)
     }
+
+    // THREAD_LISTテーブルから自分のスレッドIDに対応するレコードを持ってくる。
+    async fn select_my_thread_record_from_db(
+        db: &DbConn,
+        tid: &MazeThreadIdentifier,
+    ) -> Result<thread_list::Model, Box<dyn std::error::Error>> {
+        let txn = db.begin().await?;
+        let thread_record: thread_list::Model =
+            select_my_thread_record_from_tx(&txn, tid.thread_id_as_str(), tid.unix_time()).await?;
+        txn.commit().await?;
+        Ok(thread_record)
+    }
+
     #[tokio::test]
     #[test_log::test]
     #[ignore] // DATABASE_URL が必要なため
@@ -184,32 +190,31 @@ mod tests {
         // select_random_start_point_from_db を5回呼び出し
         let mut selected_points = Vec::new();
         for i in 0..5 {
-            let tid = MazeThreadIdentifier::new();
-            match select_random_start_point_from_db(&db, &tid).await {
+            match select_random_start_point_from_db(&db).await {
                 Ok(point) => {
                     eprintln!(
                         "Call {}: Successfully selected point ({}, {})",
                         i + 1,
-                        point.x(),
-                        point.y()
+                        point.0.x(),
+                        point.0.y()
                     );
-                    selected_points.push(point);
+                    selected_points.push(point.clone());
+                    let thread_record = select_my_thread_record_from_db(&db, &point.1)
+                        .await
+                        .expect("Failed to retrieve thread record after selecting start point");
+                    info!(
+                        "Retrieved thread record: ID={}, THREAD_ID={}, CREATE_UNIXTIME={}, START_CELL={}, OUTSIDE_WALL_CONNECT_TYPE={}",
+                        thread_record.id,
+                        thread_record.thread_id,
+                        thread_record.create_unixtime,
+                        thread_record.start_cell,
+                        thread_record.outside_wall_connect_type
+                    );
                 }
                 Err(e) => {
                     panic!("Call {}: Failed to select start point: {}", i + 1, e);
                 }
             }
-            let thread_record = select_my_thread_record_from_db(&db, &tid)
-                .await
-                .expect("Failed to retrieve thread record after selecting start point");
-            info!(
-                "Retrieved thread record: ID={}, THREAD_ID={}, CREATE_UNIXTIME={}, START_CELL={}, OUTSIDE_WALL_CONNECT_TYPE={}",
-                thread_record.id,
-                thread_record.thread_id,
-                thread_record.create_unixtime,
-                thread_record.start_cell,
-                thread_record.outside_wall_connect_type
-            );
         }
 
         // 検証：5個のポイントがすべて正常に取得できたこと
@@ -221,8 +226,8 @@ mod tests {
 
         // すべての取得したポイントが有効な座標であること
         for point in &selected_points {
-            assert!(point.x() < u64::MAX, "X coordinate should be valid");
-            assert!(point.y() < u64::MAX, "Y coordinate should be valid");
+            assert!(point.0.x() < u64::MAX, "X coordinate should be valid");
+            assert!(point.0.y() < u64::MAX, "Y coordinate should be valid");
         }
         let res = check_extendable_pillar_existance(&db).await;
         assert!(res.is_ok());

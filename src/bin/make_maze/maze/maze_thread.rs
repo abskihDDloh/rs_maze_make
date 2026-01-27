@@ -4,12 +4,10 @@ use log::{debug, info, warn};
 
 use rand::Rng;
 use rs_maze_maker::common::maze_point::MazePoint;
-use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 use rs_maze_maker::common::util::get_end_time_and_elapsed_time;
 use rs_maze_maker::common::util::get_now_unix_time;
 use sea_orm::TransactionTrait;
 
-use crate::maze::independent_transaction_routines::select_my_thread_record_from_db;
 use crate::maze::independent_transaction_routines::select_random_start_point_from_db;
 use crate::maze::move_next::get_adjacent_unused_extendable_pillar;
 use crate::maze::move_next::path_to_wall;
@@ -30,49 +28,21 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
     let mut thread_ID_cached_flag = false;
     loop {
         let mut maze_stack: Vec<MazePoint> = Vec::new();
-        let pre_tid = MazeThreadIdentifier::new();
-        let start_point_result = select_random_start_point_from_db(db, &pre_tid).await;
-        let start_point = match start_point_result {
+
+        let start_point_result = select_random_start_point_from_db(db).await;
+        let start_point_information = match start_point_result {
             Ok(p) => p,
             Err(e) => {
                 debug!(
-                    "No more unused start points available or error occurred: {:?}. Exiting maze thread. Current tid: {:?}",
-                    e, pre_tid
+                    "No more unused start points available or error occurred: {:?}. Exiting maze thread.",
+                    e
                 );
                 break;
             }
         };
 
-        // Always initialize tid to a safe default to avoid uninitialized use.
-        let mut tid = pre_tid.clone();
-        if !thread_ID_cached_flag {
-            let tid_rec_res = select_my_thread_record_from_db(db, &pre_tid).await;
-            let tid_rec = match tid_rec_res {
-                Ok(r) => {
-                    thread_ID_cached_flag = true;
-                    r
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to retrieve thread record for tid {:?}: {:?}. Continuing without cached thread ID.",
-                        pre_tid, e
-                    );
-                    break;
-                }
-            };
-            tid = match pre_tid.from_db_Record(tid_rec) {
-                Ok(t) => t,
-                Err(e) => {
-                    warn!(
-                        "Thread identifier mismatch for tid {:?}: {:?}. Continuing without cached thread ID.",
-                        pre_tid, e
-                    );
-                    break;
-                }
-            };
-        }
-
-        maze_stack.push(start_point);
+        let tid = start_point_information.1.clone();
+        maze_stack.push(start_point_information.0);
 
         let mut operation_count = 0;
         let mut txn_extend_wall = db.begin().await?;

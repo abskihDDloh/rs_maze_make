@@ -16,6 +16,7 @@ use rs_maze_maker::common::maze_point::select_bitweeb_points_and_from_adjacent;
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
 extern crate strum;
 
+use crate::maze::maze_thread_identifier::MazeThreadIdentifier;
 use crate::maze::maze_thread_utility::{
     check_unused_pillars, get_cell_status, get_pillar, is_point_outside_wall,
     is_this_thread_connect_outside_wall, select_my_thread_record_from_tx,
@@ -27,7 +28,6 @@ use rs_maze_maker::common::database::entities::unused_start_points_view;
 use rs_maze_maker::common::database::initializer::MazeCellTypeEnum;
 use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
 use rs_maze_maker::common::maze_point::MazePoint;
-use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
 
 static ADJACENT_PILLAR_DISTANCE: u64 = 2;
 
@@ -320,7 +320,6 @@ mod tests {
 
     use log::info;
     use rs_maze_maker::common::database::initializer::MazeCellTypeEnum;
-    use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
     use sea_orm::EntityTrait;
     use sea_orm::TransactionTrait;
 
@@ -383,18 +382,16 @@ mod tests {
 
         // 3. select_random_start_point_from_db()で、開始点を取得する。(開始点A)
         info!("Step 3: Selecting random start point A");
-        let tid_a = MazeThreadIdentifier::new();
+
         let start_point_a =
-            crate::maze::independent_transaction_routines::select_random_start_point_from_db(
-                &db, &tid_a,
-            )
-            .await?;
+            crate::maze::independent_transaction_routines::select_random_start_point_from_db(&db)
+                .await?;
         info!(
             "  Start point A: ({}, {})",
-            start_point_a.x(),
-            start_point_a.y()
+            start_point_a.0.x(),
+            start_point_a.0.y()
         );
-
+        let tid_a = start_point_a.1.clone();
         // 4. MAZE_CELL_STATUS_VIEWの内容をinfo!でログ出力する。
         info!("Step 4: Logging MAZE_CELL_STATUS_VIEW after selecting start point A");
         let cell_statuses = maze_cell_status_view::Entity::find()
@@ -424,7 +421,7 @@ mod tests {
         // 6. get_adjacent_unused_extendable_pillar()に上記3で取得した開始点を引き渡して次の開始点を取得する。(開始点B)
         info!("Step 6: Getting adjacent unused extendable pillar (start point B)");
         let start_point_b =
-            get_adjacent_unused_extendable_pillar(&txn1, &tid_a, &start_point_a).await?;
+            get_adjacent_unused_extendable_pillar(&txn1, &tid_a, &start_point_a.0).await?;
         txn1.commit().await?;
 
         // 7. MAZE_CELL_STATUS_VIEWの内容をinfo!でログ出力する。
@@ -460,7 +457,7 @@ mod tests {
             &txn2,
             tid_a.thread_id_as_str(),
             tid_a.unix_time(),
-            &start_point_a,
+            &start_point_a.0,
             &start_point_b,
         )
         .await?;
@@ -520,7 +517,7 @@ mod tests {
         // 開始点Aの確認
         let point_a_used = used_start_points
             .iter()
-            .find(|p| p.x == start_point_a.x() && p.y == start_point_a.y())
+            .find(|p| p.x == start_point_a.0.x() && p.y == start_point_a.0.y())
             .ok_or("Start point A not found in USED_START_POINTS_VIEW")?;
 
         assert_eq!(
