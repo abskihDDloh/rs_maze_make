@@ -1,13 +1,7 @@
-use std::{
-    thread,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::thread;
 
-use chrono::{DateTime, NaiveDateTime};
 use rand::Rng;
-use sea_orm::prelude::DateTimeUtc;
-
-use crate::common::{
+use rs_maze_maker::common::{
     database::{entities::thread_list, initializer::OutsideWallConnectTypeEnum},
     util::get_now_unix_time,
 };
@@ -24,7 +18,10 @@ pub struct MazeThreadIdentifier {
 }
 
 impl MazeThreadIdentifier {
-    pub fn new() -> Self {
+    /// 新しいMazeThreadIdentifierを生成します。(データベースのスレッドレコードに登録するためのキー情報のみを持ちます)
+    /// # 戻り値
+    /// MazeThreadIdentifierのインスタンス
+    pub(in crate::maze) fn new() -> Self {
         // 5-10msのランダムスリープを入れて、UNIX時間の重複を回避する
         use std::time::Duration;
         let mut rng = rand::rng();
@@ -41,40 +38,23 @@ impl MazeThreadIdentifier {
         }
     }
 
-    /// データベースのスレッドレコードからMazeThreadIdentifierを生成します。
+    /// データベースのスレッドレコードに登録した情報を含んだMazeThreadIdentifierを生成します。
     /// # 引数
-    /// * `record` - データベースから取得したスレッドレコード
+    /// * `record_id` - データベースから取得したスレッドレコードのID
+    /// * `outside_wall_connect_type` - データベースから取得した外壁接続タイプ
     /// # 戻り値
-    /// MazeThreadIdentifierのインスタンス、またはエラー
-    /// # エラー
-    /// スレッドIDまたはUNIX時間が一致しない場合に発生します。
-    pub fn from_db_Record(
+    /// MazeThreadIdentifierのインスタンス
+    pub(in crate::maze) fn fill_info(
         &self,
-        record: thread_list::Model,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let my_id = record.id;
-        let my_thread_id = record.thread_id.clone();
-        let my_create_unixtime = record.create_unixtime;
-        // 所有権を獲得
-        let my_outside_wall_connect_type = record.outside_wall_connect_type.clone();
-
-        if (self.thread_id_as_str() != my_thread_id) || (self.unix_time() != my_create_unixtime) {
-            return Err(format!(
-                "Mismatch in thread identifier. Expected: {}_{}, Found: {}_{}",
-                self.thread_id_as_str(),
-                self.unix_time(),
-                my_thread_id,
-                my_create_unixtime
-            )
-            .into());
-        }
-
-        Ok(MazeThreadIdentifier {
-            table_thread_id: my_id as u64,
+        record_id: u64,
+        outside_wall_connect_type: String,
+    ) -> Self {
+        MazeThreadIdentifier {
+            table_thread_id: record_id,
             tid_id: self.tid_id,
             unix_time: self.unix_time,
-            outside_wall_connect_type: my_outside_wall_connect_type,
-        })
+            outside_wall_connect_type,
+        }
     }
 }
 

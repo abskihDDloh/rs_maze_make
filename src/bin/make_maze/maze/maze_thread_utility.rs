@@ -11,11 +11,9 @@
 //! - 柱の取得と所有権の更新
 
 use log::debug;
-use log::info;
 use rand::Rng;
 use rs_maze_maker::common::database::entities::temp_unused_start_points;
 use rs_maze_maker::common::database::entities::temp_unused_start_points_count;
-use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points_count;
 use sea_orm::QuerySelect;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
@@ -29,7 +27,8 @@ use rs_maze_maker::common::database::entities::thread_list;
 use rs_maze_maker::common::database::entities::unused_start_points_view;
 use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
 use rs_maze_maker::common::maze_point::MazePoint;
-use rs_maze_maker::common::maze_thread_identifier::MazeThreadIdentifier;
+
+use crate::maze::maze_thread_identifier::MazeThreadIdentifier;
 
 /// 指定されたスレッド識別子に対応するスレッドレコードをデータベースから取得します。
 ///

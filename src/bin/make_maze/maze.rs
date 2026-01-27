@@ -3,3 +3,4 @@ mod independent_transaction_routines;
 pub mod maze_thread;
 mod maze_thread_utility;
 mod move_next;
+pub mod maze_thread_identifier;
