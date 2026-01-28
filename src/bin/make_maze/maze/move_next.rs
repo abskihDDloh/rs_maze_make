@@ -110,7 +110,7 @@ pub async fn get_adjacent_unused_extendable_pillar(
         );
 
         let is_outside_wall_start_point =
-            is_point_outside_wall(txn, &MazePoint::new(selected_point.x, selected_point.y)).await;
+            is_point_outside_wall(txn, &MazePoint::new(selected_point.x, selected_point.y)).await?;
 
         // OUTSIDE_WALL_START_POINTS_VIEWに、選択した要素の(X AND Y)が当てはまるレコードが存在するか確認する。
         if thread_from_outside_wall.0 && is_outside_wall_start_point {

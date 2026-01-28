@@ -12,10 +12,13 @@
 
 use log::debug;
 use rand::Rng;
+use rs_maze_maker::common::database::entities::temp_outside_wall_start_points;
 use rs_maze_maker::common::database::entities::temp_unused_start_points;
 use rs_maze_maker::common::database::entities::temp_unused_start_points_count;
+use rs_maze_maker::common::database::initializer::populate_temp_outside_wall_start_points;
 use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points;
 use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points_count;
+use rs_maze_maker::common::util::get_late_10_percent_flag;
 use sea_orm::QuerySelect;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
@@ -280,19 +283,43 @@ pub async fn is_this_thread_connect_outside_wall(
 ///
 /// # 戻り値
 /// 外壁の開始点の場合は`true`、そうでない場合は`false`
-pub async fn is_point_outside_wall(txn: &DatabaseTransaction, pillar: &MazePoint) -> bool {
-    // OUTSIDE_WALL_START_POINTS_VIEWに、pillarの内容に(X AND Y)が当てはまるレコードが存在するか確認する。
-    let outside_wall_start_points: Vec<outside_wall_start_points_view::Model> =
-        outside_wall_start_points_view::Entity::find()
+pub async fn is_point_outside_wall(txn: &DatabaseTransaction, pillar: &MazePoint) -> Result<bool, Box<dyn std::error::Error>> {
+    // 100分の1の確率でTEMP_OUTSIDE_WALL_START_POINTSを再生成する。(外壁の座標は初期化の際に決定されるので通常は変化しない。)
+    if get_late_10_percent_flag() && get_late_10_percent_flag() {
+        let txn_populate = txn.begin().await?;
+        populate_temp_outside_wall_start_points(&txn_populate).await?;
+        txn_populate.commit().await?;
+    }
+    loop {
+        let txn_inner = txn.begin().await?;
+        // TEMP_OUTSIDE_WALL_START_POINTSに、pillarの内容に(X AND Y)が当てはまるレコードが存在するか確認する。
+        let temp_outside_res = temp_outside_wall_start_points::Entity::find()
             .filter(
-                outside_wall_start_points_view::Column::X
+                temp_outside_wall_start_points::Column::X
                     .eq(pillar.x())
-                    .and(outside_wall_start_points_view::Column::Y.eq(pillar.y())),
+                    .and(temp_outside_wall_start_points::Column::Y.eq(pillar.y())),
             )
-            .all(txn)
-            .await
-            .unwrap_or_default();
-    !outside_wall_start_points.is_empty()
+            .one(&txn_inner)
+            .await;
+        let temp_outside = match temp_outside_res {
+            Ok(record) => record,
+            Err(e) => {
+                debug!(
+                    "Database error when checking outside wall start points: {}",
+                    e
+                );
+                populate_temp_outside_wall_start_points(&txn_inner).await?;
+                txn_inner.commit().await?;
+                continue;
+            }
+        };
+        txn_inner.commit().await?;
+        if temp_outside.is_some() {
+            return Ok(true);
+        } else {
+            return Ok(false);
+        }
+    }
 }
 
 /// 指定されたセルIDの柱を取得し、スレッドの所有権を設定します。

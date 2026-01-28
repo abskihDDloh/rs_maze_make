@@ -9,6 +9,7 @@ pub mod maze_field;
 pub mod outside_wall_connect_type;
 pub mod outside_wall_start_points_view;
 pub mod start_points_view;
+pub mod temp_outside_wall_start_points;
 pub mod temp_unused_start_points;
 pub mod temp_unused_start_points_count;
 pub mod thread_from_outside_wall_view;

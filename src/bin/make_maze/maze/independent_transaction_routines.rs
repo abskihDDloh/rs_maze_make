@@ -31,7 +31,7 @@ pub async fn select_random_start_point_from_db(
     let unix_time = pre_tid.unix_time();
 
     let selected_maze_point = MazePoint::new(x, y);
-    let is_outside = is_point_outside_wall(&txn, &selected_maze_point).await;
+    let is_outside = is_point_outside_wall(&txn, &selected_maze_point).await?;
 
     let outside_wall_connect_type = if is_outside {
         OutsideWallConnectTypeEnum::DIRECT_CONNECT

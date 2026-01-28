@@ -229,6 +229,27 @@ pub async fn populate_temp_unused_start_points_count(
     Ok(())
 }
 
+pub async fn populate_temp_outside_wall_start_points(
+    txn: &DatabaseTransaction,
+) -> Result<(), sea_orm::DbErr> {
+    let truncate_sql = "TRUNCATE TABLE TEMP_OUTSIDE_WALL_START_POINTS";
+    txn.execute(Statement::from_string(
+        DatabaseBackend::MySql,
+        truncate_sql.to_string(),
+    ))
+    .await?;
+
+    let insert_sql = "INSERT INTO TEMP_OUTSIDE_WALL_START_POINTS (CELL_ID, X, Y, CELL_TYPE) \
+                      SELECT CELL_ID, X, Y, CELL_TYPE FROM OUTSIDE_WALL_START_POINTS_VIEW";
+    txn.execute(Statement::from_string(
+        DatabaseBackend::MySql,
+        insert_sql.to_string(),
+    ))
+    .await?;
+
+    Ok(())
+}
+
 pub async fn initialize_db(
     db: &sea_orm::DbConn,
     x_max: u64,
@@ -268,6 +289,7 @@ pub async fn initialize_db(
     initialize_maze_field(&txn, x_max, y_max).await?;
     populate_temp_unused_start_points(&txn).await?;
     populate_temp_unused_start_points_count(&txn).await?;
+    populate_temp_outside_wall_start_points(&txn).await?;
     txn.commit().await?;
 
     info!("Database initialization complete");

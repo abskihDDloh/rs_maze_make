@@ -25,7 +25,6 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
     // 未使用のスタートポイントがある場合のループ。
     // ボトルネック対策: 定期的にコミットしてロックを解放
     const OPERATIONS_PER_COMMIT: u32 = 25;
-    let mut thread_ID_cached_flag = false;
     loop {
         let mut maze_stack: Vec<MazePoint> = Vec::new();
 
