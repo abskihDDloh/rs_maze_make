@@ -14,9 +14,12 @@ use log::debug;
 use rand::Rng;
 use rs_maze_maker::common::database::entities::temp_unused_start_points;
 use rs_maze_maker::common::database::entities::temp_unused_start_points_count;
+use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points;
+use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points_count;
 use sea_orm::QuerySelect;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
+    TransactionTrait,
 };
 
 use rs_maze_maker::common::database::entities::maze_cell_owner_view;
@@ -82,7 +85,7 @@ pub async fn get_unused_points_count_from_temp_records(
     Ok(count)
 }
 
-pub async fn generate_random_unused_start_point_line_number_from_temp_records(
+async fn generate_random_unused_start_point_line_number_from_temp_records(
     txn: &DatabaseTransaction,
 ) -> Result<u64, Box<dyn std::error::Error>> {
     let count = get_unused_points_count_from_temp_records(txn).await?;
@@ -95,7 +98,7 @@ pub async fn generate_random_unused_start_point_line_number_from_temp_records(
 }
 
 // 効率的な実装例
-pub async fn get_random_unused_start_point_by_line_number_candidate(
+async fn get_random_unused_start_point_by_line_number_candidate(
     txn: &DatabaseTransaction,
 ) -> Result<unused_start_points_view::Model, Box<dyn std::error::Error>> {
     let line_number = generate_random_unused_start_point_line_number_from_temp_records(txn).await?;
@@ -119,6 +122,44 @@ pub async fn get_random_unused_start_point_by_line_number_candidate(
     Ok(unused_start_point)
 }
 
+pub async fn select_random_start_point(
+    txn: &DatabaseTransaction,
+) -> Result<unused_start_points_view::Model, Box<dyn std::error::Error>> {
+    let res: unused_start_points_view::Model;
+    loop {
+        let txn_inner = txn.begin().await?;
+        let unused_start_points = get_unused_points_count_from_temp_records(&txn_inner).await?;
+        if unused_start_points == 0 {
+            txn_inner.commit().await?;
+            return Err("No unused start points available".into());
+        }
+        let unused_start_point_res =
+            get_random_unused_start_point_by_line_number_candidate(&txn_inner).await;
+        match unused_start_point_res {
+            Ok(point) => {
+                res = point;
+                txn_inner.commit().await?;
+                break;
+            }
+            Err(e) => {
+                debug!(
+                    "First attempt to get random unused start point failed, retrying...: {}",
+                    e
+                );
+                // 取得できなかったらキャッシュを再作成してリトライする。
+                populate_temp_unused_start_points(&txn_inner).await?;
+                populate_temp_unused_start_points_count(&txn_inner).await?;
+                txn_inner.commit().await?;
+                continue;
+            }
+        };
+    }
+    debug!(
+        "Successfully selected random unused start point: cell_id={}, x={}, y={}",
+        res.cell_id, res.x, res.y
+    );
+    Ok(res)
+}
 /// 指定された柱のリストの中から、未使用の柱を検索します。
 ///
 /// # 引数
