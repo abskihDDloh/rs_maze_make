@@ -5,6 +5,12 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, column_name = "CELL_ID", auto_increment = false)]
     pub cell_id: u64,
+    #[sea_orm(column_name = "X")]
+    pub x: u64,
+    #[sea_orm(column_name = "Y")]
+    pub y: u64,
+    #[sea_orm(column_name = "CELL_TYPE")]
+    pub cell_type: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
