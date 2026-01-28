@@ -197,8 +197,8 @@ pub async fn populate_temp_unused_start_points(
     ))
     .await?;
 
-    let insert_sql = "INSERT INTO TEMP_UNUSED_START_POINTS (CELL_ID) \
-                      SELECT CELL_ID FROM UNUSED_START_POINTS_VIEW";
+    let insert_sql = "INSERT INTO TEMP_UNUSED_START_POINTS (CELL_ID, X, Y, CELL_TYPE) \
+                      SELECT CELL_ID, X, Y, CELL_TYPE FROM UNUSED_START_POINTS_VIEW";
     txn.execute(Statement::from_string(
         DatabaseBackend::MySql,
         insert_sql.to_string(),
