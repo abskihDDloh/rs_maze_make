@@ -187,7 +187,7 @@ async fn initialize_maze_field(
 }
 
 // Populate TEMP_UNUSED_START_POINTS with the current unused start points
-pub async fn populate_temp_unused_start_points(
+async fn populate_temp_unused_start_points_table(
     txn: &DatabaseTransaction,
 ) -> Result<(), sea_orm::DbErr> {
     let truncate_sql = "TRUNCATE TABLE TEMP_UNUSED_START_POINTS";
@@ -208,7 +208,7 @@ pub async fn populate_temp_unused_start_points(
     Ok(())
 }
 
-pub async fn populate_temp_unused_start_points_count(
+async fn populate_temp_unused_start_points_count(
     txn: &DatabaseTransaction,
 ) -> Result<(), sea_orm::DbErr> {
     let truncate_sql = "TRUNCATE TABLE TEMP_UNUSED_START_POINTS_COUNT";
@@ -220,6 +220,35 @@ pub async fn populate_temp_unused_start_points_count(
 
     let insert_sql = "INSERT INTO TEMP_UNUSED_START_POINTS_COUNT (UNUSED_START_POINTS) \
                       SELECT UNUSED_START_POINTS FROM UNUSED_START_POINTS_COUNT_VIEW";
+    txn.execute(Statement::from_string(
+        DatabaseBackend::MySql,
+        insert_sql.to_string(),
+    ))
+    .await?;
+
+    Ok(())
+}
+
+pub async fn populate_temp_unused_start_points(
+    txn: &DatabaseTransaction,
+) -> Result<(), sea_orm::DbErr> {
+    populate_temp_unused_start_points_table(txn).await?;
+    populate_temp_unused_start_points_count(txn).await?;
+    Ok(())
+}
+
+pub async fn populate_temp_outside_wall_start_points(
+    txn: &DatabaseTransaction,
+) -> Result<(), sea_orm::DbErr> {
+    let truncate_sql = "TRUNCATE TABLE TEMP_OUTSIDE_WALL_START_POINTS";
+    txn.execute(Statement::from_string(
+        DatabaseBackend::MySql,
+        truncate_sql.to_string(),
+    ))
+    .await?;
+
+    let insert_sql = "INSERT INTO TEMP_OUTSIDE_WALL_START_POINTS (CELL_ID, X, Y, CELL_TYPE) \
+                      SELECT CELL_ID, X, Y, CELL_TYPE FROM OUTSIDE_WALL_START_POINTS_VIEW";
     txn.execute(Statement::from_string(
         DatabaseBackend::MySql,
         insert_sql.to_string(),
@@ -267,7 +296,7 @@ pub async fn initialize_db(
     initialize_maze_cell(&txn, x_max, y_max).await?;
     initialize_maze_field(&txn, x_max, y_max).await?;
     populate_temp_unused_start_points(&txn).await?;
-    populate_temp_unused_start_points_count(&txn).await?;
+    populate_temp_outside_wall_start_points(&txn).await?;
     txn.commit().await?;
 
     info!("Database initialization complete");

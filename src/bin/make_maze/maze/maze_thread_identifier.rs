@@ -65,6 +65,9 @@ impl Default for MazeThreadIdentifier {
 }
 
 impl MazeThreadIdentifier {
+    pub fn table_thread_id(&self) -> u64 {
+        self.table_thread_id
+    }
     pub fn thread_id(&self) -> thread::ThreadId {
         self.tid_id
     }
@@ -83,7 +86,7 @@ impl MazeThreadIdentifier {
     pub fn outside_wall_connect_type(&self) -> &str {
         &self.outside_wall_connect_type
     }
-    pub fn get_outside_wall_connect_type_enum(
+    pub fn outside_wall_connect_type_enum(
         &self,
     ) -> Result<OutsideWallConnectTypeEnum, strum::ParseError> {
         self.outside_wall_connect_type.parse()
