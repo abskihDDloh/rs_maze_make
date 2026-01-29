@@ -81,8 +81,7 @@ pub async fn get_adjacent_unused_extendable_pillar(
     );
 
     //UNUSED_START_POINTS_VIEWから、adjacent_pillarsの内容に(X AND Y)が当てはまるレコードをすべて取得する。
-    let mut unused_points: Vec<unused_start_points_view::Model> =
-        check_unused_pillars(txn, &adjacent_pillars).await?;
+    let mut unused_points = check_unused_pillars(txn, &adjacent_pillars).await?;
 
     loop {
         if unused_points.is_empty() {

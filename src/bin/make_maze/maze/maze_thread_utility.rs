@@ -17,7 +17,6 @@ use rs_maze_maker::common::database::entities::temp_unused_start_points;
 use rs_maze_maker::common::database::entities::temp_unused_start_points_count;
 use rs_maze_maker::common::database::initializer::populate_temp_outside_wall_start_points;
 use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points;
-use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points_count;
 use rs_maze_maker::common::util::get_late_10_percent_flag;
 use sea_orm::QuerySelect;
 use sea_orm::{
@@ -28,7 +27,6 @@ use sea_orm::{
 use rs_maze_maker::common::database::entities::maze_cell_owner_view;
 use rs_maze_maker::common::database::entities::maze_cell_status_view;
 use rs_maze_maker::common::database::entities::maze_field;
-use rs_maze_maker::common::database::entities::outside_wall_start_points_view;
 use rs_maze_maker::common::database::entities::thread_list;
 use rs_maze_maker::common::database::entities::unused_start_points_view;
 use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
@@ -151,7 +149,6 @@ pub async fn select_random_start_point(
                 );
                 // 取得できなかったらキャッシュを再作成してリトライする。
                 populate_temp_unused_start_points(&txn_inner).await?;
-                populate_temp_unused_start_points_count(&txn_inner).await?;
                 txn_inner.commit().await?;
                 continue;
             }
@@ -179,18 +176,37 @@ pub async fn check_unused_pillars(
         return Ok(Vec::new());
     }
 
-    // すべての柱の条件をORで結合してシングルクエリで実行
-    let mut condition = Condition::any();
+    // 1) TEMP_UNUSED_START_POINTS から該当する柱の cell_id を取得
+    let mut temp_condition = Condition::any();
     for pillar in pillars {
-        condition = condition.add(
+        temp_condition = temp_condition.add(
             Condition::all()
-                .add(unused_start_points_view::Column::X.eq(pillar.x()))
-                .add(unused_start_points_view::Column::Y.eq(pillar.y())),
+                .add(temp_unused_start_points::Column::X.eq(pillar.x()))
+                .add(temp_unused_start_points::Column::Y.eq(pillar.y())),
         );
+    }
+    let temp_points = temp_unused_start_points::Entity::find()
+        .filter(temp_condition)
+        .all(txn)
+        .await?;
+
+    if temp_points.is_empty() {
+        debug!(
+            "Pillars: {:?} Checked unused pillars: none (temp cache miss)",
+            pillars
+        );
+        return Ok(Vec::new());
+    }
+
+    // 2) cell_id で unused_start_points_view を検索
+    let mut view_condition = Condition::any();
+    for temp_point in temp_points {
+        view_condition =
+            view_condition.add(unused_start_points_view::Column::CellId.eq(temp_point.cell_id));
     }
     let unused_points: Vec<unused_start_points_view::Model> =
         unused_start_points_view::Entity::find()
-            .filter(condition)
+            .filter(view_condition)
             .all(txn)
             .await?;
     debug!(
@@ -283,7 +299,10 @@ pub async fn is_this_thread_connect_outside_wall(
 ///
 /// # 戻り値
 /// 外壁の開始点の場合は`true`、そうでない場合は`false`
-pub async fn is_point_outside_wall(txn: &DatabaseTransaction, pillar: &MazePoint) -> Result<bool, Box<dyn std::error::Error>> {
+pub async fn is_point_outside_wall(
+    txn: &DatabaseTransaction,
+    pillar: &MazePoint,
+) -> Result<bool, Box<dyn std::error::Error>> {
     // 100分の1の確率でTEMP_OUTSIDE_WALL_START_POINTSを再生成する。(外壁の座標は初期化の際に決定されるので通常は変化しない。)
     if get_late_10_percent_flag() && get_late_10_percent_flag() {
         let txn_populate = txn.begin().await?;
