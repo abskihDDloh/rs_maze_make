@@ -178,7 +178,7 @@ async fn connect_to_outside_wall(
 }
 
 pub async fn connect_all_not_connected_threads_to_outside_wall(
-    db: &sea_orm::DbConn,
+    db: &sea_orm::DbConn,thread_limit: usize
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop{
     let txn_get_targets = db.begin().await?;
@@ -189,14 +189,16 @@ pub async fn connect_all_not_connected_threads_to_outside_wall(
         info!("All maze threads are already connected to outside wall. No action needed.");
         break;
     }
+    //thread_limitの数だけ並列で接続処理を行う。
     let local_set = tokio::task::LocalSet::new();
     local_set
         .run_until(async {
             let mut handles = vec![];
-            for rec in not_connected_threads {
+            for rec in not_connected_threads.iter().take(thread_limit) {
                 let db_clone = db.clone();
+                let rec_clone = rec.clone();
                 let handle = tokio::task::spawn_local(async move {
-                    connect_to_outside_wall(&db_clone, &rec).await
+                    connect_to_outside_wall(&db_clone, &rec_clone).await
                 });
                 handles.push(handle);
             }

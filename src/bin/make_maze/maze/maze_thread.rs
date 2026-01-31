@@ -5,6 +5,7 @@ use rs_maze_maker::common::maze_point::MazePoint;
 use sea_orm::TransactionTrait;
 
 use crate::maze::independent_transaction_routines::select_random_start_point_from_db;
+use crate::maze::maze_thread_utility::get_unused_points_count_from_temp_records;
 use crate::maze::move_next::get_adjacent_unused_extendable_pillar;
 use crate::maze::move_next::path_to_wall;
 
@@ -68,7 +69,7 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
                     maze_stack.pop();
                     // スタックが空になった場合は内側のループを抜けてコミットする(すでに拡張可能な柱がないため)。
                     if maze_stack.is_empty() {
-                        info!(
+                        debug!(
                             "Maze stack is empty after pop, breaking inner loop. {}",
                             debug_maze_state!(maze_stack, "None", &tid)
                         );
@@ -112,6 +113,49 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
         }
         populate_temp_unused_start_points(&txn_extend_wall).await?;
         txn_extend_wall.commit().await?;
+    }
+    Ok(())
+}
+
+pub async fn execute_maze_threads_threads_to_outside_wall(
+    db: &sea_orm::DbConn,
+    thread_limit: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        let txn_get_unused_counts = db.begin().await?;
+        populate_temp_unused_start_points(&txn_get_unused_counts).await?;
+        let unused_counts =
+            get_unused_points_count_from_temp_records(&txn_get_unused_counts).await?;
+        txn_get_unused_counts.commit().await?;
+        // 未使用のスタートポイントが存在しない場合は処理を終了する。
+        if unused_counts == 0 {
+            info!("All maze threads have connected to outside wall. No action needed.");
+            break;
+        }
+        // thread_limitの数だけ並列でmaze_thread_functionの処理を行う。
+        let local_set = tokio::task::LocalSet::new();
+        local_set
+            .run_until(async {
+                let mut handles = vec![];
+                for _ in 0..thread_limit {
+                    let db_clone = db.clone();
+                    let handle =
+                        tokio::task::spawn_local(
+                            async move { maze_thread_function(&db_clone).await },
+                        );
+                    handles.push(handle);
+                }
+                // すべてのタスクの完了を待つ
+                for handle in handles {
+                    let result = handle.await;
+                    // 利用可能な開始点がなくなった時点で必ずエラーになる。
+                    match result {
+                        Ok(_) => info!("Maze generation task completed successfully."),
+                        Err(e) => warn!("Maze generation task failed: {}", e),
+                    }
+                }
+            })
+            .await;
     }
     Ok(())
 }
