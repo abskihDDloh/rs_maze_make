@@ -66,10 +66,6 @@ pub async fn get_adjacent_unused_extendable_pillar(
     tid: &MazeThreadIdentifier,
     current_pillar: &MazePoint,
 ) -> Result<MazePoint, Box<dyn std::error::Error>> {
-    // THREAD_LISTから、MazeThreadIdentifierの内容(THREAD_ID,CREATE_UNIXTIME)に当てはまるレコードを取得する。ない場合はエラー。
-    let thread_record =
-        select_my_thread_record_from_tx(txn, tid.thread_id_as_str(), tid.unix_time()).await?;
-
     //THREAD_FROM_OUTSIDE_WALL_VIEWから、MazeThreadIdentifierの内容に当てはまるレコードを取得する。
     let thread_from_outside_wall = is_this_thread_connect_outside_wall(txn, tid).await?;
 
@@ -160,7 +156,7 @@ pub async fn get_adjacent_unused_extendable_pillar(
         }
         // selected_point.cell_id に当てはまるMAZE_FIELDのCELL_OWNER_THREAD_IDがNullの場合にかぎり、CELL_OWNER_THREAD_IDをthread_record.idに更新する。
         // エラーの場合は次の候補へ。
-        let result = get_pillar(txn, selected_point.cell_id, thread_record.id).await;
+        let result = get_pillar(txn, selected_point.cell_id, tid.table_thread_id()).await;
         if result.is_err() {
             warn!(
                 "{} Failed to get pillar: {:?}, error: {:?}",
@@ -173,11 +169,11 @@ pub async fn get_adjacent_unused_extendable_pillar(
 
         //outside_wall_start_pointsが空でない場合は、THREAD_LISTのOUTSIDE_WALL_CONNECT_TYPEがNOT_CONNECTである場合に限り、tidの内容に当てはまるレコードのOUTSIDE_WALL_CONNECT_TYPEをDIRECT_CONNECTに更新する。
         if is_outside_wall_start_point
-            && thread_record.outside_wall_connect_type
+            && tid.outside_wall_connect_type()
                 == OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()
         {
             let mut update_model = thread_list::ActiveModel {
-                id: sea_orm::ActiveValue::Unchanged(thread_record.id),
+                id: sea_orm::ActiveValue::Unchanged(tid.table_thread_id()),
                 outside_wall_connect_type: sea_orm::ActiveValue::Set(
                     OutsideWallConnectTypeEnum::DIRECT_CONNECT.to_string(),
                 ),
