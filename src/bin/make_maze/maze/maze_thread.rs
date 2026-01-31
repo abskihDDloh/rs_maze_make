@@ -1,12 +1,7 @@
-use std::thread;
-
 use log::{debug, info, warn};
 
-use rand::Rng;
 use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points;
 use rs_maze_maker::common::maze_point::MazePoint;
-use rs_maze_maker::common::util::get_end_time_and_elapsed_time;
-use rs_maze_maker::common::util::get_now_unix_time;
 use sea_orm::TransactionTrait;
 
 use crate::maze::independent_transaction_routines::select_random_start_point_from_db;
@@ -25,7 +20,7 @@ macro_rules! debug_maze_state {
 pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn std::error::Error>> {
     // 未使用のスタートポイントがある場合のループ。
     // ボトルネック対策: 定期的にコミットしてロックを解放
-    const OPERATIONS_PER_COMMIT: u32 = 25;
+    const OPERATIONS_PER_COMMIT: u32 = 500;
     loop {
         let mut maze_stack: Vec<MazePoint> = Vec::new();
 
@@ -48,24 +43,16 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
         let mut txn_extend_wall = db.begin().await?;
 
         loop {
-            let mut inner_loop_start_time: i64 = 0;
-            if log::log_enabled!(log::Level::Debug) {
-                inner_loop_start_time = get_now_unix_time();
-            }
             let current_pillar = match maze_stack.last() {
                 Some(p) => *p,
                 None => {
-                    info!(
+                    debug!(
                         "Maze stack is empty, breaking inner loop. {}",
                         debug_maze_state!(maze_stack, "None", &tid)
                     );
                     break;
                 }
             };
-            debug!(
-                "Loop start. {}",
-                debug_maze_state!(maze_stack, Some(current_pillar), &tid)
-            );
             let next_pillar_result =
                 get_adjacent_unused_extendable_pillar(&txn_extend_wall, &tid, &current_pillar)
                     .await;
@@ -121,17 +108,6 @@ pub async fn maze_thread_function(db: &sea_orm::DbConn) -> Result<(), Box<dyn st
                 txn_extend_wall.commit().await?;
                 txn_extend_wall = db.begin().await?;
                 operation_count = 0;
-                debug!(
-                    "Committed batch, starting new transaction for thread {:?}",
-                    tid
-                );
-            }
-            if log::log_enabled!(log::Level::Debug) {
-                let inner_loop_elpsed_time = get_end_time_and_elapsed_time(inner_loop_start_time);
-                debug!(
-                    "Inner loop elapsed time for thread {:?}: {:?} ns",
-                    tid, inner_loop_elpsed_time
-                );
             }
         }
         populate_temp_unused_start_points(&txn_extend_wall).await?;

@@ -15,7 +15,6 @@ use rand::Rng;
 use rs_maze_maker::common::database::entities::temp_outside_wall_start_points;
 use rs_maze_maker::common::database::entities::temp_unused_start_points;
 use rs_maze_maker::common::database::entities::temp_unused_start_points_count;
-use rs_maze_maker::common::database::initializer::MazeCellTypeEnum;
 use rs_maze_maker::common::database::initializer::populate_temp_outside_wall_start_points;
 use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points;
 use rs_maze_maker::common::util::get_late_10_percent_flag;
@@ -177,7 +176,6 @@ pub async fn select_unused_pillars(
         return Ok(Vec::new());
     }
 
-    let inner_txn = txn.begin().await?;
     // 1) TEMP_UNUSED_START_POINTS から該当する柱の cell_id を取得
     let mut temp_condition = Condition::any();
     for pillar in pillars {
@@ -189,7 +187,7 @@ pub async fn select_unused_pillars(
     }
     let temp_points = temp_unused_start_points::Entity::find()
         .filter(temp_condition)
-        .all(&inner_txn)
+        .all(txn)
         .await?;
 
     if temp_points.is_empty() {
@@ -201,19 +199,16 @@ pub async fn select_unused_pillars(
     }
 
     // 2) cell_id で MAZE_FIELD を検索する。このとき、CELL_OWNER_THREAD_ID が NULL のものだけを対象とする。
-    let mut cell_id_condition = Condition::any();
-    for temp_point in &temp_points {
-        cell_id_condition = cell_id_condition.add(
-            Condition::all()
-                .add(maze_field::Column::Id.eq(temp_point.cell_id))
-                .add(maze_field::Column::CellOwnerThreadId.is_null()),
-        );
-    }
+    // IN句を使用してクエリを最適化
+    let cell_ids: Vec<u64> = temp_points.iter().map(|p| p.cell_id).collect();
     let used_fields = maze_field::Entity::find()
-        .filter(cell_id_condition)
-        .all(&inner_txn)
+        .filter(
+            maze_field::Column::Id
+                .is_in(cell_ids)
+                .and(maze_field::Column::CellOwnerThreadId.is_null()),
+        )
+        .all(txn)
         .await?;
-    inner_txn.commit().await?;
 
     // 3)temp_pointsから、used_fieldsに存在するcell_idを持つものだけを選択する。
     let used_cell_ids: Vec<u64> = used_fields.iter().map(|field| field.id).collect();
@@ -264,19 +259,16 @@ pub async fn get_cell_status(
     txn: &DatabaseTransaction,
     cell: &MazePoint,
 ) -> Result<(u64, String, Option<u64>), Box<dyn std::error::Error>> {
-    let txn_inner = txn.begin().await?;
     // MAZE_CELL_STATUS_VIEWから、cellの内容に(X AND Y)が当てはまるレコードを取得する。
-    let maze_cell_status: maze_cell_status_view::Model =
-        maze_cell_status_view::Entity::find()
-            .filter(
-                maze_cell_status_view::Column::X
-                    .eq(cell.x())
-                    .and(maze_cell_status_view::Column::Y.eq(cell.y())),
-            )
-            .one(&txn_inner)
-            .await?
-            .ok_or("Cell status not found")?;
-    txn_inner.commit().await?;
+    let maze_cell_status: maze_cell_status_view::Model = maze_cell_status_view::Entity::find()
+        .filter(
+            maze_cell_status_view::Column::X
+                .eq(cell.x())
+                .and(maze_cell_status_view::Column::Y.eq(cell.y())),
+        )
+        .one(txn)
+        .await?
+        .ok_or("Cell status not found")?;
     Ok((
         maze_cell_status.cell_id,
         maze_cell_status.cell_type,
@@ -297,11 +289,8 @@ pub async fn is_this_thread_connect_outside_wall(
     tid: &MazeThreadIdentifier,
 ) -> Result<(bool, u64), Box<dyn std::error::Error>> {
     // THREAD_LISTから、MazeThreadIdentifierの内容に当てはまるレコードを取得する。
-    let inner_txn = txn.begin().await?;
     let thread_record =
-        select_my_thread_record_from_tx(&inner_txn, tid.thread_id_as_str(), tid.unix_time())
-            .await?;
-    inner_txn.commit().await?;
+        select_my_thread_record_from_tx(txn, tid.thread_id_as_str(), tid.unix_time()).await?;
     if thread_record.outside_wall_connect_type
         == OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()
     {
