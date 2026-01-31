@@ -12,7 +12,7 @@
 
 use log::{debug, info, warn};
 use rand::Rng;
-use rs_maze_maker::common::maze_point::select_bitweeb_points_and_from_adjacent;
+use rs_maze_maker::common::maze_point::select_bitween_points_and_from_adjacent;
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
 extern crate strum;
 
@@ -24,7 +24,6 @@ use crate::maze::maze_thread_utility::{
 
 use rs_maze_maker::common::database::entities::maze_field;
 use rs_maze_maker::common::database::entities::thread_list;
-use rs_maze_maker::common::database::entities::unused_start_points_view;
 use rs_maze_maker::common::database::initializer::MazeCellTypeEnum;
 use rs_maze_maker::common::database::initializer::OutsideWallConnectTypeEnum;
 use rs_maze_maker::common::maze_point::MazePoint;
@@ -121,7 +120,7 @@ pub async fn get_adjacent_unused_extendable_pillar(
         // 選択した要素ともとの要素の間にあるセルを計算する。
         let selected_maze_point = MazePoint::new(selected_point.x, selected_point.y);
         let bitween_cell =
-            select_bitweeb_points_and_from_adjacent(current_pillar, &selected_maze_point, 1);
+            select_bitween_points_and_from_adjacent(current_pillar, &selected_maze_point, 1);
         if bitween_cell.len() != 1 {
             warn!(
                 "get_adjacent_unused_extendable_pillar: Invalid number of between cells: current_pillar=({},{}) selected_point=({},{}) between_cells={:?}",
@@ -139,8 +138,8 @@ pub async fn get_adjacent_unused_extendable_pillar(
         let adjacent_cell_status = get_cell_status(txn, &adjacent_cells_candidate).await?;
 
         // 取得したレコードが未利用のPATHでなければ次の候補へ
-        if adjacent_cell_status.cell_type != MazeCellTypeEnum::PATH.to_string()
-            || adjacent_cell_status.cell_owner_thread_id.is_some()
+        if adjacent_cell_status.1 != MazeCellTypeEnum::PATH.to_string()
+            || adjacent_cell_status.2.is_some()
         {
             warn!(
                 "Adjacent cell is not PATH: current_pillar=({},{}) selected_point=({},{}) adjacent_cell=({},{}) status={:?}",
@@ -224,7 +223,7 @@ pub async fn path_to_wall(
     let thread_id_from_table: u64 = thread.id;
 
     //current_pillarとnext_pillarの中間地点を計算する。
-    let bitween_cells = select_bitweeb_points_and_from_adjacent(current_pillar, next_pillar, 1);
+    let bitween_cells = select_bitween_points_and_from_adjacent(current_pillar, next_pillar, 1);
     // 2個以上取得された場合はエラー。
     if bitween_cells.len() != 1 {
         // エラーメッセージにcurrent_pillar,next_pillar,bitween_cellsの内容を含める。
@@ -233,8 +232,8 @@ pub async fn path_to_wall(
     let path_cell = bitween_cells[0];
     // 取得したレコードが未利用のPATHでなければエラー。
     let cell_status = get_cell_status(txn, &path_cell).await?;
-    if cell_status.cell_type != MazeCellTypeEnum::PATH.to_string()
-        || cell_status.cell_owner_thread_id.is_some()
+    if cell_status.1 != MazeCellTypeEnum::PATH.to_string()
+        || cell_status.2.is_some()
     {
         return Err(format!("Between cell is not unused PATH: current_pillar=({},{}) next_pillar=({},{}) between_cell=({},{}) status={:?}",
         current_pillar.x(),
@@ -249,7 +248,7 @@ pub async fn path_to_wall(
 
     // MAZE_FIELDのIDがcell_statusから取得したIDで、CELL_OWNER_THREAD_IDがNullで、CELL_TYPEがPATHの場合に限り、該当するレコードののCELL_TYPEをPATHからWALLに変更し、CELL_OWNER_THREAD_IDにthread_record.idを設定する。
     let update_model = maze_field::ActiveModel {
-        id: sea_orm::ActiveValue::Unchanged(cell_status.cell_id),
+        id: sea_orm::ActiveValue::Unchanged(cell_status.0),
         cell_type: sea_orm::ActiveValue::Set(MazeCellTypeEnum::WALL.to_string()),
         cell_owner_thread_id: sea_orm::ActiveValue::Set(Some(thread_id_from_table)),
         ..Default::default()
@@ -259,7 +258,7 @@ pub async fn path_to_wall(
             maze_field::Column::CellOwnerThreadId
                 .is_null()
                 .and(maze_field::Column::CellType.eq(MazeCellTypeEnum::PATH.to_string()))
-                .and(maze_field::Column::Id.eq(cell_status.cell_id)),
+                .and(maze_field::Column::Id.eq(cell_status.0)),
         )
         .exec(txn)
         .await?;

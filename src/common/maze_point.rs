@@ -89,7 +89,7 @@ fn select_between_points_exlude_edge(from: &MazePoint, to: &MazePoint) -> Vec<Ma
 }
 
 /// from-toを対角線の1つとする長方形に含まれる点のうち、fromに隣接する点のみを取得する。
-pub fn select_bitweeb_points_and_from_adjacent(
+pub fn select_bitween_points_and_from_adjacent(
     from: &MazePoint,
     to: &MazePoint,
     distance: u64,
@@ -215,7 +215,7 @@ mod tests {
         let from = MazePoint::new(2, 2);
         let to = MazePoint::new(4, 4);
 
-        let points = select_bitweeb_points_and_from_adjacent(&from, &to, 1);
+        let points = select_bitween_points_and_from_adjacent(&from, &to, 1);
         let point_set: HashSet<_> = points.into_iter().collect();
 
         // distance=1の場合、fromの隣接点は (1,2), (3,2), (2,1), (2,3)
@@ -232,7 +232,7 @@ mod tests {
         let from = MazePoint::new(2, 2);
         let to = MazePoint::new(5, 5);
 
-        let points = select_bitweeb_points_and_from_adjacent(&from, &to, 2);
+        let points = select_bitween_points_and_from_adjacent(&from, &to, 2);
         let point_set: HashSet<_> = points.into_iter().collect();
 
         // distance=2の場合、fromの隣接点は (0,2), (4,2), (2,0), (2,4)
@@ -247,7 +247,7 @@ mod tests {
         let from = MazePoint::new(1, 1);
         let to = MazePoint::new(2, 2);
 
-        let points = select_bitweeb_points_and_from_adjacent(&from, &to, 1);
+        let points = select_bitween_points_and_from_adjacent(&from, &to, 1);
         let point_set: HashSet<_> = points.into_iter().collect();
 
         // 小さい長方形で、fromの隣接点がfrom-toの矩形内に存在しない場合

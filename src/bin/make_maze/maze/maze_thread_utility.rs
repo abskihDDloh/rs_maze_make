@@ -15,6 +15,7 @@ use rand::Rng;
 use rs_maze_maker::common::database::entities::temp_outside_wall_start_points;
 use rs_maze_maker::common::database::entities::temp_unused_start_points;
 use rs_maze_maker::common::database::entities::temp_unused_start_points_count;
+use rs_maze_maker::common::database::initializer::MazeCellTypeEnum;
 use rs_maze_maker::common::database::initializer::populate_temp_outside_wall_start_points;
 use rs_maze_maker::common::database::initializer::populate_temp_unused_start_points;
 use rs_maze_maker::common::util::get_late_10_percent_flag;
@@ -256,23 +257,31 @@ pub async fn get_used_cell_status(
 /// * `cell` - ステータスを取得するセルの座標
 ///
 /// # 戻り値
-/// セルステータスビューのモデル、またはエラー
+/// セルID、セルタイプ、セル所有スレッドIDのタプル、またはエラー
+/// # エラー
+/// セルステータスが見つからない場合、またはデータベースエラーが発生した場合に返されます。
 pub async fn get_cell_status(
     txn: &DatabaseTransaction,
     cell: &MazePoint,
-) -> Result<maze_cell_status_view::Model, Box<dyn std::error::Error>> {
-    let cell_status: Vec<maze_cell_status_view::Model> = maze_cell_status_view::Entity::find()
-        .filter(
-            maze_cell_status_view::Column::X
-                .eq(cell.x())
-                .and(maze_cell_status_view::Column::Y.eq(cell.y())),
-        )
-        .all(txn)
-        .await?;
-    Ok(cell_status
-        .into_iter()
-        .next()
-        .ok_or("Cell status not found")?)
+) -> Result<(u64, String, Option<u64>), Box<dyn std::error::Error>> {
+    let txn_inner = txn.begin().await?;
+    // MAZE_CELL_STATUS_VIEWから、cellの内容に(X AND Y)が当てはまるレコードを取得する。
+    let maze_cell_status: maze_cell_status_view::Model =
+        maze_cell_status_view::Entity::find()
+            .filter(
+                maze_cell_status_view::Column::X
+                    .eq(cell.x())
+                    .and(maze_cell_status_view::Column::Y.eq(cell.y())),
+            )
+            .one(&txn_inner)
+            .await?
+            .ok_or("Cell status not found")?;
+    txn_inner.commit().await?;
+    Ok((
+        maze_cell_status.cell_id,
+        maze_cell_status.cell_type,
+        maze_cell_status.cell_owner_thread_id,
+    ))
 }
 
 /// 指定されたスレッドが外壁に接触しているものかどうかを判定します。
