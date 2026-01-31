@@ -12,6 +12,8 @@ use crate::maze::maze_thread_utility::get_pillar;
 use crate::maze::maze_thread_utility::is_point_outside_wall;
 use crate::maze::maze_thread_utility::select_random_start_point;
 
+
+
 /// 未使用の開始ポイントをランダムに選択し、THREAD_LISTテーブルに新しいスレッドレコードを追加する。
 /// # 引数
 /// * `db` - データベース接続

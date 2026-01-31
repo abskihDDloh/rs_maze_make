@@ -18,8 +18,8 @@ extern crate strum;
 
 use crate::maze::maze_thread_identifier::MazeThreadIdentifier;
 use crate::maze::maze_thread_utility::{
-    check_unused_pillars, get_cell_status, get_pillar, is_point_outside_wall,
-    is_this_thread_connect_outside_wall, select_my_thread_record_from_tx,
+    get_cell_status, get_pillar, is_point_outside_wall, is_this_thread_connect_outside_wall,
+    select_my_thread_record_from_tx, select_unused_pillars,
 };
 
 use rs_maze_maker::common::database::entities::maze_field;
@@ -77,7 +77,7 @@ pub async fn get_adjacent_unused_extendable_pillar(
     );
 
     //UNUSED_START_POINTS_VIEWから、adjacent_pillarsの内容に(X AND Y)が当てはまるレコードをすべて取得する。
-    let mut unused_points = check_unused_pillars(txn, &adjacent_pillars).await?;
+    let mut unused_points = select_unused_pillars(txn, &adjacent_pillars).await?;
 
     loop {
         if unused_points.is_empty() {

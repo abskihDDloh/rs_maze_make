@@ -168,14 +168,15 @@ pub async fn select_random_start_point(
 ///
 /// # 戻り値
 /// 未使用開始点ビューのモデルのベクタ、またはエラー
-pub async fn check_unused_pillars(
+pub async fn select_unused_pillars(
     txn: &DatabaseTransaction,
     pillars: &[MazePoint],
-) -> Result<Vec<unused_start_points_view::Model>, Box<dyn std::error::Error>> {
+) -> Result<Vec<temp_unused_start_points::Model>, Box<dyn std::error::Error>> {
     if pillars.is_empty() {
         return Ok(Vec::new());
     }
 
+    let inner_txn = txn.begin().await?;
     // 1) TEMP_UNUSED_START_POINTS から該当する柱の cell_id を取得
     let mut temp_condition = Condition::any();
     for pillar in pillars {
@@ -187,7 +188,7 @@ pub async fn check_unused_pillars(
     }
     let temp_points = temp_unused_start_points::Entity::find()
         .filter(temp_condition)
-        .all(txn)
+        .all(&inner_txn)
         .await?;
 
     if temp_points.is_empty() {
@@ -198,22 +199,29 @@ pub async fn check_unused_pillars(
         return Ok(Vec::new());
     }
 
-    // 2) cell_id で unused_start_points_view を検索
-    let mut view_condition = Condition::any();
-    for temp_point in temp_points {
-        view_condition =
-            view_condition.add(unused_start_points_view::Column::CellId.eq(temp_point.cell_id));
+    // 2) cell_id で MAZE_FIELD を検索する。このとき、CELL_OWNER_THREAD_ID が NULL のものだけを対象とする。
+    let mut cell_id_condition = Condition::any();
+    for temp_point in &temp_points {
+        cell_id_condition = cell_id_condition.add(
+            Condition::all()
+                .add(maze_field::Column::Id.eq(temp_point.cell_id))
+                .add(maze_field::Column::CellOwnerThreadId.is_null()),
+        );
     }
-    let unused_points: Vec<unused_start_points_view::Model> =
-        unused_start_points_view::Entity::find()
-            .filter(view_condition)
-            .all(txn)
-            .await?;
-    debug!(
-        "Pillars: {:?} Checked unused pillars: {:?}",
-        pillars, unused_points
-    );
-    Ok(unused_points)
+    let used_fields = maze_field::Entity::find()
+        .filter(cell_id_condition)
+        .all(&inner_txn)
+        .await?;
+    inner_txn.commit().await?;
+
+    // 3)temp_pointsから、used_fieldsに存在するcell_idを持つものだけを選択する。
+    let used_cell_ids: Vec<u64> = used_fields.iter().map(|field| field.id).collect();
+    let temp_points: Vec<temp_unused_start_points::Model> = temp_points
+        .into_iter()
+        .filter(|temp_point| used_cell_ids.contains(&temp_point.cell_id))
+        .collect();
+
+    Ok(temp_points)
 }
 
 /// 指定された使用中セルのステータス情報を取得します。
@@ -280,8 +288,11 @@ pub async fn is_this_thread_connect_outside_wall(
     tid: &MazeThreadIdentifier,
 ) -> Result<(bool, u64), Box<dyn std::error::Error>> {
     // THREAD_LISTから、MazeThreadIdentifierの内容に当てはまるレコードを取得する。
+    let inner_txn = txn.begin().await?;
     let thread_record =
-        select_my_thread_record_from_tx(txn, tid.thread_id_as_str(), tid.unix_time()).await?;
+        select_my_thread_record_from_tx(&inner_txn, tid.thread_id_as_str(), tid.unix_time())
+            .await?;
+    inner_txn.commit().await?;
     if thread_record.outside_wall_connect_type
         == OutsideWallConnectTypeEnum::NOT_CONNECT.to_string()
     {
