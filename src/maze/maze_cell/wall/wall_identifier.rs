@@ -3,12 +3,13 @@ use std::{
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
+use uuid::Uuid;
 
 /// 壁の識別子を表す構造体
 ///
 /// この構造体は迷路生成において、各壁がどのスレッドのどの処理で生成されたかを
 /// 一意に識別するために使用されます。識別子はスレッドIDと生成時刻のナノ秒を
-/// 組み合わせることで、高い確率でユニークな値を生成します。
+/// UUIDを組み合わせることで、高い確率でユニークな値を生成します。
 ///
 /// # 設計目的
 ///
@@ -22,6 +23,7 @@ use std::{
 /// ## 識別子の構成
 /// - **スレッドID** (`thread::ThreadId`): 生成元スレッドの識別
 /// - **UNIX時刻** (ナノ秒精度): 生成時刻の高精度記録
+/// - **UUID v4** (`Uuid`): 乱数ベースのグローバル一意識別
 /// - **ランダムスリープ**: 5-10ナノ秒の待機による重複回避
 ///
 /// ## 一意性の保証方法
@@ -29,17 +31,18 @@ use std::{
 /// 2. **スレッド分離**: 各スレッドが独立した識別子空間を持つ
 /// 3. **ランダム待機**: 同時生成時の時刻衝突を回避
 /// 4. **単調増加**: 同一スレッド内での時刻の順序保証
+/// 5. **UUID付与**: クロック分解能やスレッド再利用を跨いだ衝突可能性を低減
 ///
 /// ## 文字列形式
 /// ```text
-/// ThreadId(<内部ID>)_<UNIX時刻ナノ秒>
+/// ThreadId(<内部ID>)_<UNIX時刻ナノ秒>_<UUID>
 /// ```
-/// 例: `"ThreadId(1)_1633036800123456789"`
+/// 例: `"ThreadId(1)_1633036800123456789_550e8400-e29b-41d4-a716-446655440000"`
 ///
 /// # パフォーマンス特性
 ///
 /// - **生成時間**: 約5-15ナノ秒（ランダムスリープ含む）
-/// - **メモリ使用量**: 16バイト（ThreadId + i64）
+/// - **メモリ使用量**: ThreadId + i64 + UUID(16バイト)
 /// - **比較性能**: O(1) - 単純な値比較
 /// - **ハッシュ性能**: O(1) - 構造体メンバーの組み合わせ
 ///
@@ -57,7 +60,7 @@ use std::{
 /// # use crate::maze::maze_cell::wall::wall_identifier::WallIdentifier;
 /// let identifier = WallIdentifier::new();
 /// println!("識別子: {}", identifier.as_str());
-/// // 出力例: "ThreadId(1)_1633036800123456789"
+/// // 出力例: "ThreadId(1)_1633036800123456789_550e8400-e29b-41d4-a716-446655440000"
 /// ```
 ///
 /// ## 壁の所有権チェック
@@ -124,6 +127,8 @@ pub struct WallIdentifier {
     tid_id: thread::ThreadId,
     /// UNIX時刻（ナノ秒精度）
     unix_time_nanos: i64,
+    ///UUID
+    uuid: Uuid,
 }
 
 #[allow(dead_code)]
@@ -213,9 +218,11 @@ impl WallIdentifier {
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_nanos() as i64;
+        let uuid = Uuid::new_v4();
         WallIdentifier {
             tid_id,
             unix_time_nanos,
+            uuid,
         }
     }
 
@@ -227,7 +234,7 @@ impl WallIdentifier {
     /// # 文字列形式
     ///
     /// ```text
-    /// ThreadId(<内部スレッドID>)_<UNIX時刻ナノ秒>
+    /// ThreadId(<内部スレッドID>)_<UNIX時刻ナノ秒>_<UUID>
     /// ```
     ///
     /// ## 構成要素
@@ -238,6 +245,8 @@ impl WallIdentifier {
     /// - **時刻部分**: UNIX エポックからのナノ秒（10進数）
     ///   - 例: `1633036800123456789`
     ///   - 19桁程度の数値（2021年現在）
+    /// - **UUID部分**: 16進数ハイフン区切り形式
+    ///   - 例: `550e8400-e29b-41d4-a716-446655440000`
     ///
     /// # 一意性保証
     ///
@@ -301,7 +310,7 @@ impl WallIdentifier {
     /// let id_str = identifier.as_str();
     ///
     /// println!("Generated ID: {}", id_str);
-    /// // 出力例: "Generated ID: ThreadId(1)_1633036800123456789"
+    /// // 出力例: "Generated ID: ThreadId(1)_1633036800123456789_550e8400-e29b-41d4-a716-446655440000"
     ///
     /// // 文字列の基本的なプロパティ確認
     /// assert!(id_str.contains("ThreadId"));
@@ -330,12 +339,13 @@ impl WallIdentifier {
     ///
     /// // 文字列形式の検証
     /// let parts: Vec<&str> = id_str.split('_').collect();
-    /// assert_eq!(parts.len(), 2);
+    /// assert_eq!(parts.len(), 3);
     /// assert!(parts[0].starts_with("ThreadId"));
     /// assert!(parts[1].parse::<i64>().is_ok());
+    /// assert!(parts[2].parse::<uuid::Uuid>().is_ok());
     /// ```
     pub fn as_str(&self) -> String {
-        format!("{:?}_{}", self.tid_id, self.unix_time_nanos)
+        format!("{:?}_{}_{}", self.tid_id, self.unix_time_nanos, self.uuid)
     }
 
     /// スレッドIDを取得します
@@ -379,6 +389,17 @@ impl WallIdentifier {
     /// ```
     pub fn unix_time_nanos(&self) -> i64 {
         self.unix_time_nanos
+    }
+
+    /// UUIDを取得します
+    ///
+    /// この識別子に付与されたUUID v4を返します。
+    ///
+    /// # 戻り値
+    ///
+    /// `Uuid` 値
+    pub fn uuid(&self) -> Uuid {
+        self.uuid
     }
 
     /// 別の識別子との時刻差を計算します
@@ -578,16 +599,22 @@ mod tests {
 
         // パース可能性の確認
         let parts: Vec<&str> = id_str.split('_').collect();
-        assert_eq!(parts.len(), 2, "String should have exactly one underscore");
+        assert_eq!(parts.len(), 3, "String should have exactly two underscores");
 
         let thread_part = parts[0];
         let time_part = parts[1];
+        let uuid_part = parts[2];
 
         assert!(thread_part.starts_with("ThreadId"));
         assert!(
             time_part.parse::<i64>().is_ok(),
             "Time part should be a valid number: {}",
             time_part
+        );
+        assert!(
+            uuid_part.parse::<Uuid>().is_ok(),
+            "UUID part should be a valid UUID: {}",
+            uuid_part
         );
 
         // Display trait との一致確認
@@ -601,6 +628,7 @@ mod tests {
         // アクセサメソッドの動作確認
         assert_eq!(id.thread_id(), std::thread::current().id());
         assert!(id.unix_time_nanos() > 0);
+        assert_ne!(id.uuid(), Uuid::nil());
 
         // 時刻比較メソッドのテスト
         let id2 = WallIdentifier::new();
@@ -957,7 +985,7 @@ mod tests {
 
         // 文字列の解析可能性
         let parts: Vec<&str> = as_str_format.split('_').collect();
-        assert_eq!(parts.len(), 2);
+        assert_eq!(parts.len(), 3);
 
         // ThreadId 部分の検証
         assert!(parts[0].starts_with("ThreadId("));
@@ -966,6 +994,10 @@ mod tests {
         // 時刻部分の検証
         let time_value = parts[1].parse::<i64>().unwrap();
         assert_eq!(time_value, id.unix_time_nanos());
+
+        // UUID部分の検証
+        let uuid_value = parts[2].parse::<Uuid>().unwrap();
+        assert_eq!(uuid_value, id.uuid());
     }
 
     #[test]
