@@ -5,6 +5,7 @@ use crate::maze::maze_cell::{
         wall_identifier::WallIdentifier, wall_type::WallType,
     },
 };
+use std::collections::HashMap;
 
 /// メソッド使用の強制を行うための内部構造体
 ///
@@ -147,7 +148,7 @@ impl NewMethodEnforcer {
 /// - **Algorithm**: 生成アルゴリズムでの判定基準
 /// - **Renderer**: 描画システムでの表示判定
 /// - **Validator**: 迷路構造の整合性検証
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MazePointStatus {
     /// 通路（移動可能な空間）
     ///
@@ -186,9 +187,9 @@ pub enum MazePointStatus {
     ///
     /// # 構造仕様
     ///
-    /// `Wall(WallType, Option<WallIdentifier>, NewMethodEnforcer)`
+    /// `Wall(WallType, HashMap<WallIdentifier, usize>, NewMethodEnforcer)`
     /// - **第1要素**: 壁の種類（[`WallType`]） - 壁の詳細分類
-    /// - **第2要素**: 識別子（[`Option<WallIdentifier>`]） - 所有権管理
+    /// - **第2要素**: 識別子集合（[`HashMap<WallIdentifier, usize>`]） - 所有権管理
     /// - **第3要素**: 型安全性強制器（内部実装詳細）
     ///
     /// # 壁の分類体系
@@ -237,11 +238,28 @@ pub enum MazePointStatus {
     /// - **借用**: 参照による一時的アクセス
     /// - **複製**: Clone traitによる深いコピー
     /// - **移動**: 所有権移転による効率的な転送
-    Wall(WallType, Option<WallIdentifier>, NewMethodEnforcer),
+    Wall(WallType, HashMap<WallIdentifier, usize>, NewMethodEnforcer),
 }
 
 #[allow(dead_code)]
 impl MazePointStatus {
+    fn single_identifier_map(identifier: WallIdentifier) -> HashMap<WallIdentifier, usize> {
+        let mut identifiers = HashMap::new();
+        identifiers.insert(identifier, 0);
+        identifiers
+    }
+
+    fn append_identifier(
+        mut identifiers: HashMap<WallIdentifier, usize>,
+        identifier: &WallIdentifier,
+    ) -> HashMap<WallIdentifier, usize> {
+        if !identifiers.contains_key(identifier) {
+            let next_index = identifiers.len();
+            identifiers.insert(*identifier, next_index);
+        }
+        identifiers
+    }
+
     /// 通路状態を生成します
     ///
     /// プレイヤーが移動可能な空間の状態を作成します。
@@ -319,7 +337,7 @@ impl MazePointStatus {
     pub fn new_maze_wall(identifier: WallIdentifier) -> Self {
         MazePointStatus::Wall(
             WallType::new_maze_wall(),
-            Some(identifier),
+            Self::single_identifier_map(identifier),
             NewMethodEnforcer::new(),
         )
     }
@@ -346,7 +364,7 @@ impl MazePointStatus {
     pub fn new_start_point_outside_wall(identifier: WallIdentifier) -> Self {
         MazePointStatus::Wall(
             WallType::new_start_point_outside_wall(),
-            Some(identifier),
+            Self::single_identifier_map(identifier),
             NewMethodEnforcer::new(),
         )
     }
@@ -373,7 +391,7 @@ impl MazePointStatus {
     pub fn new_just_outside_wall(identifier: WallIdentifier) -> Self {
         MazePointStatus::Wall(
             WallType::new_just_outside_wall(),
-            Some(identifier),
+            Self::single_identifier_map(identifier),
             NewMethodEnforcer::new(),
         )
     }
@@ -419,12 +437,13 @@ impl MazePointStatus {
         identifier: &WallIdentifier,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         match src_outside_wall {
-            MazePointStatus::Wall(wall_type, _, _) => {
+            MazePointStatus::Wall(wall_type, wall_identifiers, _) => {
                 let extending_wall_type =
                     WallType::new_extending_start_point_from_notchecked_start_point(wall_type)?;
+                let updated_identifiers = Self::append_identifier(wall_identifiers, identifier);
                 Ok(MazePointStatus::Wall(
                     extending_wall_type,
-                    Some(*identifier),
+                    updated_identifiers,
                     NewMethodEnforcer::new(),
                 ))
             }
@@ -458,7 +477,7 @@ impl MazePointStatus {
     pub fn new_notchecked_pillar() -> Self {
         MazePointStatus::Wall(
             WallType::new_not_checked_pillar(),
-            None,
+            HashMap::new(),
             NewMethodEnforcer::new(),
         )
     }
@@ -504,13 +523,16 @@ impl MazePointStatus {
         identifier: &WallIdentifier,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         match src_pillar {
-            MazePointStatus::Wall(wall_type, None, _) => {
+            MazePointStatus::Wall(wall_type, wall_identifiers, _)
+                if wall_identifiers.is_empty() =>
+            {
                 let extending_wall_type =
                     WallType::new_extending_pillar_from_notchecked_pillar(wall_type)?;
+                let updated_identifiers = Self::append_identifier(wall_identifiers, identifier);
 
                 Ok(MazePointStatus::Wall(
                     extending_wall_type,
-                    Some(*identifier),
+                    updated_identifiers,
                     NewMethodEnforcer::new(),
                 ))
             }
@@ -557,13 +579,41 @@ impl MazePointStatus {
     /// # 戻り値
     ///
     /// 識別子への参照（利用可能な場合）
-    pub fn get_wall_identifier(&self) -> Option<&WallIdentifier> {
+    pub fn get_wall_identifier(&self) -> Option<&HashMap<WallIdentifier, usize>> {
         if !self.is_wall() {
             return None;
         }
         match self {
-            MazePointStatus::Wall(_, Some(id), _) => Some(id),
+            MazePointStatus::Wall(_, ids, _) => Some(ids),
             _ => None,
+        }
+    }
+
+    pub fn get_primary_wall_identifier(&self) -> Option<WallIdentifier> {
+        let ids = self.get_wall_identifier()?;
+        ids.iter().min_by_key(|(_, order)| **order).map(|(id, _)| *id)
+    }
+
+    pub fn add_wall_identifier(
+        src_wall: MazePointStatus,
+        identifier: &WallIdentifier,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        match src_wall {
+            MazePointStatus::Wall(wall_type, wall_identifiers, _) => {
+                let updated_identifiers = Self::append_identifier(wall_identifiers, identifier);
+                Ok(MazePointStatus::Wall(
+                    wall_type,
+                    updated_identifiers,
+                    NewMethodEnforcer::new(),
+                ))
+            }
+            _ => Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Cannot add wall identifier: expected wall status, found {:?}",
+                    src_wall
+                ),
+            ))),
         }
     }
 
@@ -758,7 +808,11 @@ impl MazePointStatus {
         }
         matches!(
             self,
-            MazePointStatus::Wall(WallType::Pillar(ExtendStatus::NotChecked, ..), None, _)
+            MazePointStatus::Wall(
+                WallType::Pillar(ExtendStatus::NotChecked, ..),
+                identifiers,
+                _
+            ) if identifiers.is_empty()
         )
     }
 
@@ -783,7 +837,11 @@ impl MazePointStatus {
         }
         matches!(
             self,
-            MazePointStatus::Wall(WallType::Pillar(ExtendStatus::Extending, ..), Some(_), _)
+            MazePointStatus::Wall(
+                WallType::Pillar(ExtendStatus::Extending, ..),
+                identifiers,
+                _
+            ) if !identifiers.is_empty()
         )
     }
 
@@ -810,8 +868,8 @@ impl MazePointStatus {
             return false;
         }
         let wall_identifier = self.get_wall_identifier();
-        if let Some(id) = wall_identifier {
-            return *id == *identifier;
+        if let Some(ids) = wall_identifier {
+            return ids.contains_key(identifier);
         }
         false
     }
@@ -934,7 +992,9 @@ mod tests {
         assert!(!maze_wall.is_outside_wall());
         assert!(!maze_wall.is_pillar());
         assert!(maze_wall.is_my_wall(&identifier));
-        assert_eq!(maze_wall.get_wall_identifier(), Some(&identifier));
+        let wall_ids = maze_wall.get_wall_identifier().unwrap();
+        assert!(wall_ids.contains_key(&identifier));
+        assert_eq!(maze_wall.get_primary_wall_identifier(), Some(identifier));
         assert!(maze_wall.get_wall_type().is_some());
     }
 
@@ -981,7 +1041,7 @@ mod tests {
         assert!(pillar.is_pillar());
         assert!(pillar.is_not_checked_pillar());
         assert!(!pillar.is_extending_pillar());
-        assert_eq!(pillar.get_wall_identifier(), None);
+        assert_eq!(pillar.get_wall_identifier(), Some(&HashMap::new()));
         assert!(pillar.is_not_checked_wall());
         assert!(!pillar.is_extending_wall());
     }
@@ -1028,7 +1088,9 @@ mod tests {
         assert!(!extending_pillar.is_not_checked_pillar());
         assert!(extending_pillar.is_extending_pillar());
         assert!(extending_pillar.is_my_wall(&identifier));
-        assert_eq!(extending_pillar.get_wall_identifier(), Some(&identifier));
+        let wall_ids = extending_pillar.get_wall_identifier().unwrap();
+        assert!(wall_ids.contains_key(&identifier));
+        assert_eq!(extending_pillar.get_primary_wall_identifier(), Some(identifier));
         assert!(!extending_pillar.is_not_checked_wall());
         assert!(extending_pillar.is_extending_wall());
     }
@@ -1304,19 +1366,23 @@ mod tests {
 
         // Test maze wall
         let maze_wall = MazePointStatus::new_maze_wall(identifier1);
-        assert_eq!(maze_wall.get_wall_identifier(), Some(&identifier1));
+        let maze_wall_ids = maze_wall.get_wall_identifier().unwrap();
+        assert!(maze_wall_ids.contains_key(&identifier1));
+        assert_eq!(maze_wall.get_primary_wall_identifier(), Some(identifier1));
         assert!(maze_wall.is_my_wall(&identifier1));
         assert!(!maze_wall.is_my_wall(&identifier2));
 
         // Test start point
         let start_wall = MazePointStatus::new_start_point_outside_wall(identifier1);
-        assert_eq!(start_wall.get_wall_identifier(), Some(&identifier1));
+        let start_wall_ids = start_wall.get_wall_identifier().unwrap();
+        assert!(start_wall_ids.contains_key(&identifier1));
+        assert_eq!(start_wall.get_primary_wall_identifier(), Some(identifier1));
         assert!(start_wall.is_my_wall(&identifier1));
         assert!(!start_wall.is_my_wall(&identifier2));
 
         // Test pillar (no identifier initially)
         let pillar = MazePointStatus::new_notchecked_pillar();
-        assert_eq!(pillar.get_wall_identifier(), None);
+        assert_eq!(pillar.get_wall_identifier(), Some(&HashMap::new()));
         assert!(!pillar.is_my_wall(&identifier1));
         assert!(!pillar.is_my_wall(&identifier2));
 
@@ -1324,7 +1390,9 @@ mod tests {
         let extending_pillar =
             MazePointStatus::new_extending_pillar_from_notchecked_pillar(pillar, &identifier2)
                 .unwrap();
-        assert_eq!(extending_pillar.get_wall_identifier(), Some(&identifier2));
+        let extending_ids = extending_pillar.get_wall_identifier().unwrap();
+        assert!(extending_ids.contains_key(&identifier2));
+        assert_eq!(extending_pillar.get_primary_wall_identifier(), Some(identifier2));
         assert!(!extending_pillar.is_my_wall(&identifier1));
         assert!(extending_pillar.is_my_wall(&identifier2));
 
@@ -1392,27 +1460,23 @@ mod tests {
         assert_ne!(maze_wall1, pillar1);
     }
 
-    // Hash Consistency Tests
+    // Equality Consistency Tests
     #[test]
-    fn test_hash_consistency() {
+    fn test_equality_consistency() {
         let identifier = WallIdentifier::new();
-        let mut status_map = HashMap::new();
 
-        // Test that equal statuses have same hash
+        // Test that equal statuses are comparable by value
         let path1 = MazePointStatus::new_not_resolved_path();
         let path2 = MazePointStatus::new_not_resolved_path();
-        status_map.insert(path1, "path");
-        assert_eq!(status_map.get(&path2), Some(&"path"));
+        assert_eq!(path1, path2);
 
         let pillar1 = MazePointStatus::new_notchecked_pillar();
         let pillar2 = MazePointStatus::new_notchecked_pillar();
-        status_map.insert(pillar1, "pillar");
-        assert_eq!(status_map.get(&pillar2), Some(&"pillar"));
+        assert_eq!(pillar1, pillar2);
 
-        // Test that different statuses have different hashes
+        // Test that different statuses are not equal
         let maze_wall = MazePointStatus::new_maze_wall(identifier);
-        status_map.insert(maze_wall.clone(), "maze_wall");
-        assert_ne!(status_map.get(&path2), status_map.get(&maze_wall));
+        assert_ne!(path2, maze_wall);
     }
 
     // Debug Output Tests
@@ -1428,12 +1492,12 @@ mod tests {
         let maze_wall = MazePointStatus::new_maze_wall(identifier);
         let debug_str = format!("{:?}", maze_wall);
         assert!(debug_str.contains("Wall"));
-        assert!(debug_str.contains("Some"));
+        assert!(debug_str.contains("MazeWall"));
 
         let pillar = MazePointStatus::new_notchecked_pillar();
         let debug_str = format!("{:?}", pillar);
         assert!(debug_str.contains("Wall"));
-        assert!(debug_str.contains("None"));
+        assert!(debug_str.contains("{}"));
     }
 
     // Memory Layout Tests
@@ -1603,7 +1667,7 @@ mod tests {
             MazePointStatus::Path(PathType::NotResolvedPath, NewMethodEnforcer::new());
         let _direct_wall = MazePointStatus::Wall(
             WallType::new_not_checked_pillar(),
-            None,
+            HashMap::new(),
             NewMethodEnforcer::new(),
         );
 

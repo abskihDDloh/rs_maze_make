@@ -44,6 +44,7 @@ use crate::maze::{
 /// - [`Field::mark_start_point_as_extending()`]
 /// - [`WallIdentifier`]
 /// - [`OutsideWallType::StartPoint`]
+#[allow(dead_code)]
 pub(in crate::maze) fn select_start_point_outside_wall(
     maze_points: &Arc<RwLock<Field>>,
     identifier: WallIdentifier,
@@ -103,6 +104,98 @@ pub(in crate::maze) fn select_start_point_outside_wall(
             Err(err) => {
                 warn!("Failed to mark start point as extending. {}", err);
                 drop(maze_points_write); // 書き込みロックを解放
+                continue;
+            }
+        }
+    }
+}
+
+pub(in crate::maze) fn select_start_point_any_source(
+    maze_points: &Arc<RwLock<Field>>,
+    identifier: WallIdentifier,
+) -> Result<MazePoint, Box<dyn std::error::Error + Send + Sync>> {
+    let error_msg_common_part = format!(" identifier: {}", identifier.as_str());
+
+    #[derive(Debug, Clone, Copy)]
+    enum StartSourceKind {
+        OutsideStartPoint,
+        ExistingExtendingPillar,
+    }
+
+    loop {
+        let maze_points_read = maze_points.read().map_err(|_| {
+            Box::new(std::io::Error::other(format!(
+                "Failed to acquire read lock. {:?}",
+                identifier
+            ))) as Box<dyn std::error::Error + Send + Sync>
+        })?;
+
+        if maze_points_read.all_pillar_seeked_flag() {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "All start points have been sought. {}",
+                    error_msg_common_part
+                ),
+            )));
+        }
+
+        let selected_source = if let Some(start_point) = maze_points_read.get_random_available_start_point() {
+            Some((start_point, StartSourceKind::OutsideStartPoint))
+        } else {
+            maze_points_read
+                .get_random_available_extending_source_pillar()
+                .map(|pillar| (pillar, StartSourceKind::ExistingExtendingPillar))
+        };
+
+        let (source_point, source_kind) = selected_source.ok_or_else(|| {
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "No available start point or extending pillar source found.{}",
+                    error_msg_common_part
+                ),
+            )) as Box<dyn std::error::Error + Send + Sync>
+        })?;
+
+        drop(maze_points_read);
+
+        let mut maze_points_write = maze_points.write().map_err(|_| {
+            Box::new(std::io::Error::other(format!(
+                "Failed to acquire write lock. {}",
+                error_msg_common_part
+            ))) as Box<dyn std::error::Error + Send + Sync>
+        })?;
+
+        if maze_points_write.all_pillar_seeked_flag() {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "All start points have been sought. {}",
+                    error_msg_common_part
+                ),
+            )));
+        }
+
+        let mark_result = match source_kind {
+            StartSourceKind::OutsideStartPoint => {
+                maze_points_write.mark_start_point_as_extending(&source_point, &identifier)
+            }
+            StartSourceKind::ExistingExtendingPillar => maze_points_write
+                .mark_extending_pillar_with_identifier(&source_point, &identifier),
+        };
+
+        match mark_result {
+            Ok(()) => {
+                drop(maze_points_write);
+                return Ok(source_point);
+            }
+            Err(err) => {
+                warn!(
+                    "Failed to mark source point as extending/owned. kind={:?}, point={:?}, err={}",
+                    source_kind, source_point, err
+                );
+                drop(maze_points_write);
                 continue;
             }
         }

@@ -11,7 +11,7 @@ use crate::maze::{
         wall::wall_identifier::WallIdentifier,
     },
     maze_field::field::Field,
-    maze_maker::{extend_point_to_adjacent_pillar, select_start_point_outside_wall},
+    maze_maker::{extend_point_to_adjacent_pillar, select_start_point_any_source},
 };
 
 pub fn maze_generate_thread(
@@ -41,7 +41,7 @@ pub fn maze_generate_thread(
         let mut point_stack = Vec::new();
 
         // 最初の開始点を取得
-        match select_start_point_outside_wall(maze_points, identifier) {
+        match select_start_point_any_source(maze_points, identifier) {
             Ok(next_point) => {
                 point_stack.push(next_point);
                 debug!("Selected start point: {:?}", next_point);

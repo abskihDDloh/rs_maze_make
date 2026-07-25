@@ -156,9 +156,11 @@ fn save_maze_result_as_png(
     let mut wall_identifiers: HashSet<WallIdentifier> = HashSet::new();
     for (_point, status) in maze_i {
         if status.is_wall()
-            && let Some(identifier) = status.get_wall_identifier()
+            && let Some(identifiers) = status.get_wall_identifier()
         {
-            wall_identifiers.insert(*identifier);
+            for identifier in identifiers.keys() {
+                wall_identifiers.insert(*identifier);
+            }
         }
     }
     let maze = maze_points.clone();
@@ -202,8 +204,16 @@ fn save_maze_result_as_png(
     let black_color = image::Rgba([0u8, 0u8, 0u8, 255u8]); // 黒
     for (point, status) in maze {
         let color = if status.is_wall() {
-            if let Some(identifier) = status.get_wall_identifier() {
-                wall_color_list.get(identifier).unwrap_or(&black_color)
+            if let Some(identifiers) = status.get_wall_identifier() {
+                if let Some((primary_identifier, _)) =
+                    identifiers.iter().min_by_key(|(_, order)| **order)
+                {
+                    wall_color_list
+                        .get(primary_identifier)
+                        .unwrap_or(&black_color)
+                } else {
+                    &black_color
+                }
             } else {
                 &black_color
             }
