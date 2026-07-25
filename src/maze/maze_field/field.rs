@@ -24,10 +24,10 @@ use crate::maze::{
 #[derive(Debug, Clone)]
 pub(crate) struct Field {
     /// 迷路のX方向の大きさ
-    x_size: u32,
+    x_size: u64,
 
     /// 迷路のY方向の大きさ
-    y_size: u32,
+    y_size: u64,
 
     /// 迷路の全座標点とその状態のマッピング
     all_maze_points: HashMap<MazePoint, MazePointStatus>,
@@ -47,12 +47,12 @@ pub(crate) struct Field {
 
 impl Field {
     /// 迷路のX方向の大きさを返します。
-    pub fn x_size(&self) -> u32 {
+    pub fn x_size(&self) -> u64 {
         self.x_size
     }
 
     /// 迷路のY方向の大きさを返します。
-    pub fn y_size(&self) -> u32 {
+    pub fn y_size(&self) -> u64 {
         self.y_size
     }
 
@@ -157,8 +157,8 @@ impl Field {
     /// let maze = Field::initialize_maze_points(7, 7)?;
     /// ```
     pub fn initialize_maze_points(
-        x_size: u32,
-        y_size: u32,
+        x_size: u64,
+        y_size: u64,
     ) -> Result<Arc<RwLock<Self>>, Box<dyn std::error::Error>> {
         if x_size < 5 || y_size < 5 || x_size % 2 == 0 || y_size % 2 == 0 {
             return Err(Box::new(std::io::Error::new(
@@ -168,7 +168,7 @@ impl Field {
         }
 
         // 引数がi32の範囲内の値であることを確認する
-        if x_size > i32::MAX as u32 || y_size > i32::MAX as u32 {
+        if x_size > i32::MAX as u64 || y_size > i32::MAX as u64 {
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "x_size and y_size must be within the range of i32",
@@ -179,7 +179,7 @@ impl Field {
         let mut all_maze_points: HashMap<MazePoint, MazePointStatus> = HashMap::new();
         for y in 0..y_size {
             for x in 0..x_size {
-                let point = MazePoint::new(x, y);
+                let point = MazePoint::new(x as u64, y as u64);
                 all_maze_points.insert(point, MazePointStatus::new_not_resolved_path());
             }
         }
@@ -197,14 +197,14 @@ impl Field {
                     {
                         // 偶数座標の外壁はstart_point
                         all_maze_points.insert(
-                            MazePoint::new(x, y),
+                            MazePoint::new(x as u64, y as u64),
                             MazePointStatus::new_start_point_outside_wall(outside_wall_id),
                         );
-                        extend_start_points.insert(MazePoint::new(x, y));
+                        extend_start_points.insert(MazePoint::new(x as u64, y as u64));
                     } else {
                         // 偶数座標以外の外壁はjust_outside_wall
                         all_maze_points.insert(
-                            MazePoint::new(x, y),
+                            MazePoint::new(x as u64, y as u64),
                             MazePointStatus::new_just_outside_wall(outside_wall_id),
                         );
                     }
@@ -217,7 +217,7 @@ impl Field {
         for y in 0..y_size {
             for x in 0..x_size {
                 if x % 2 == 0 && y % 2 == 0 {
-                    let point = MazePoint::new(x, y);
+                    let point = MazePoint::new(x as u64, y as u64);
                     if let Some(point_value) = all_maze_points.get_mut(&point)
                         && point_value.is_path()
                     {

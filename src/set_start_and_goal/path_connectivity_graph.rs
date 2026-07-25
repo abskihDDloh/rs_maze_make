@@ -28,7 +28,7 @@ impl PathConnectivityGraph {
         maze_points: &HashMap<MazePoint, MazePointStatus>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // maze_pointsに含まれるMazePointの一覧を取得し、x,yの最大値を探す。
-        let (x_max, y_max) = maze_points.keys().fold((0, 0), |(x_max, y_max), point| {
+        let (x_max, y_max) = maze_points.keys().fold((0u64, 0u64), |(x_max, y_max), point| {
             (x_max.max(point.x()), y_max.max(point.y()))
         });
 
@@ -96,8 +96,8 @@ impl PathConnectivityGraph {
     fn connect_adjacent_paths(
         graph: &mut UnGraph<MazePoint, ()>,
         point_to_node: &mut HashMap<MazePoint, NodeIndex>,
-        x_size: u32,
-        y_size: u32,
+        x_size: u64,
+        y_size: u64,
         point: &MazePoint,
         all_points: &HashMap<MazePoint, MazePointStatus>,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -112,12 +112,12 @@ impl PathConnectivityGraph {
         let adjacent_offsets = [(0, 1), (0, -1), (1, 0), (-1, 0)];
 
         for (dx, dy) in adjacent_offsets {
-            let new_x = point.x() as i32 + dx;
-            let new_y = point.y() as i32 + dy;
+            let new_x = point.x() as i64 + dx as i64;
+            let new_y = point.y() as i64 + dy as i64;
 
             // 境界チェック
-            if new_x >= 0 && new_y >= 0 && new_x < x_size as i32 && new_y < y_size as i32 {
-                let adjacent_point = MazePoint::new(new_x as u32, new_y as u32);
+            if new_x >= 0 && new_y >= 0 && new_x < x_size as i64 && new_y < y_size as i64 {
+                let adjacent_point = MazePoint::new(new_x as u64, new_y as u64);
 
                 // 隣接点がPathかチェック
                 if let Some(adjacent_status) = all_points.get(&adjacent_point)

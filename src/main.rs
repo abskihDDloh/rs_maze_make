@@ -34,14 +34,14 @@ struct Args {
         default_value = "5",
         help = "x方向のピクセル数を指定します。"
     )]
-    x_size: u32,
+    x_size: u64,
     #[arg(
         short = 'y',
         long = "y_size",
         default_value = "5",
         help = "y方向のピクセル数を指定します。"
     )]
-    y_size: u32,
+    y_size: u64,
     #[arg(
         short = 'f',
         long = "file_path",
@@ -79,8 +79,8 @@ fn get_workers_limit() -> u32 {
 }
 
 fn make_maze(
-    x_size: u32,
-    y_size: u32,
+    x_size: u64,
+    y_size: u64,
     max_threads: u32,
 ) -> Result<Arc<RwLock<Field>>, Box<dyn std::error::Error>> {
     let maze_points = Field::initialize_maze_points(x_size, y_size)?;
@@ -146,8 +146,8 @@ fn make_maze(
 
 fn save_maze_result_as_png(
     maze_points: HashMap<MazePoint, MazePointStatus>,
-    width: u32,
-    height: u32,
+    width: u64,
+    height: u64,
     file_path: &PathBuf,
     solve_flag: bool,
     color_flag: bool,
@@ -218,7 +218,21 @@ fn save_maze_result_as_png(
             "Point: {:?}, Color: {:?}, Status: {:?}",
             point, color, status
         );
-        img.put_pixel(point.x(), point.y(), *color);
+        img.put_pixel(
+            point.x().try_into().map_err(|_| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("x coordinate is too large for image output: {}", point.x()),
+                )) as Box<dyn std::error::Error>
+            })?,
+            point.y().try_into().map_err(|_| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("y coordinate is too large for image output: {}", point.y()),
+                )) as Box<dyn std::error::Error>
+            })?,
+            *color,
+        );
     }
 
     img.save(file_path)?;
@@ -227,8 +241,8 @@ fn save_maze_result_as_png(
 }
 
 fn start(
-    x_size: u32,
-    y_size: u32,
+    x_size: u64,
+    y_size: u64,
     max_threads: u32,
     file_path: &str,
     color_flag: bool,

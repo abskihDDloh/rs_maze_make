@@ -32,19 +32,19 @@ use std::{collections::HashSet, hash::Hash};
 ///
 /// ## 座標範囲
 /// - **最小値**: (0, 0)
-/// - **最大値**: (u32::MAX, u32::MAX)
+/// - **最大値**: (u64::MAX, u64::MAX)
 /// - **実用範囲**: 迷路サイズに依存（通常数千以下）
 ///
 /// # パフォーマンス特性
 ///
 /// ## メモリ効率
-/// - **サイズ**: 8バイト（u32 × 2）
-/// - **アライメント**: 4バイト境界
+/// - **サイズ**: 16バイト（u64 × 2）
+/// - **アライメント**: 8バイト境界
 /// - **キャッシュ親和性**: 小さなサイズによる良好な局所性
 ///
 /// ## 計算性能
 /// - **作成**: O(1) - 単純な構造体初期化
-/// - **比較**: O(1) - 2つのu32比較
+/// - **比較**: O(1) - 2つのu64比較
 /// - **ハッシュ**: O(1) - 構造的ハッシュ計算
 /// - **隣接点生成**: O(1) - 固定数の算術演算
 ///
@@ -74,9 +74,9 @@ use std::{collections::HashSet, hash::Hash};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy, Default)]
 pub struct MazePoint {
     /// X座標（横方向位置）
-    x: u32,
+    x: u64,
     /// Y座標（縦方向位置）
-    y: u32,
+    y: u64,
 }
 
 impl MazePoint {
@@ -96,7 +96,7 @@ impl MazePoint {
     /// - **即座返却**: 追加的な処理を行わない
     ///
     /// ## 境界値対応
-    /// - **u32全範囲**: 0からu32::MAXまでの全値を受容
+    /// - **u64全範囲**: 0からu64::MAXまでの全値を受容
     /// - **オーバーフロー**: 呼び出し側の責任で管理
     /// - **境界確認**: 迷路サイズとの整合性は別途確認
     ///
@@ -108,7 +108,7 @@ impl MazePoint {
     /// # 戻り値
     ///
     /// 指定座標の新しい `MazePoint` インスタンス
-    pub fn new(x: u32, y: u32) -> Self {
+    pub fn new(x: u64, y: u64) -> Self {
         MazePoint { x, y }
     }
 
@@ -118,8 +118,8 @@ impl MazePoint {
     ///
     /// # 戻り値
     ///
-    /// X座標値（0以上のu32値）
-    pub fn x(&self) -> u32 {
+    /// X座標値（0以上のu64値）
+    pub fn x(&self) -> u64 {
         self.x
     }
 
@@ -129,8 +129,8 @@ impl MazePoint {
     ///
     /// # 戻り値
     ///
-    /// Y座標値（0以上のu32値）
-    pub fn y(&self) -> u32 {
+    /// Y座標値（0以上のu64値）
+    pub fn y(&self) -> u64 {
         self.y
     }
 
@@ -149,7 +149,7 @@ impl MazePoint {
     ///
     /// ## 境界処理
     /// - **アンダーフロー**: `saturating_sub()` により0にクランプ
-    /// - **オーバーフロー**: `saturating_add()` によりu32::MAXにクランプ
+    /// - **オーバーフロー**: `saturating_add()` によりu64::MAXにクランプ
     /// - **自己除外**: 結果が現在座標と同一の場合は除去
     ///
     /// ## 重複除去
@@ -182,7 +182,7 @@ impl MazePoint {
     /// # 戻り値
     ///
     /// 有効な隣接座標点のベクタ（0-4個の要素）
-    pub fn generate_adjacent_maze_points(&self, distance: u32) -> Vec<MazePoint> {
+    pub fn generate_adjacent_maze_points(&self, distance: u64) -> Vec<MazePoint> {
         // 上下左右に指定された距離だけ離れた位置を生成
         // オーバーフローの場合は最大値、アンダーフローの場合は最小値
         let mut points = HashSet::from([
@@ -267,7 +267,7 @@ impl MazePoint {
 ///
 /// ## 境界条件
 /// - **座標0**: 最小座標での正常動作
-/// - **最大座標**: u32::MAX付近での適切な処理
+/// - **最大座標**: u64::MAX付近での適切な処理
 /// - **座標逆順**: 引数順序の影響なし
 ///
 /// # 注意事項
@@ -278,9 +278,9 @@ impl MazePoint {
 /// - **代替手段**: 大領域では iterator ベースの処理を検討
 ///
 /// ## 座標妥当性
-/// - **範囲外座標**: u32範囲外の座標は未対応
+/// - **範囲外座標**: u64範囲外の座標は未対応
 /// - **迷路境界**: 迷路サイズとの整合性は呼び出し側で確認
-/// - **負座標**: u32型のため負座標は表現不可
+/// - **負座標**: u64型のため負座標は表現不可
 ///
 /// # 引数
 ///
@@ -625,8 +625,8 @@ mod tests {
         assert_eq!(points[0], from);
 
         // 大きな値での境界テスト
-        let from = MazePoint::new(u32::MAX - 2, u32::MAX - 2);
-        let to = MazePoint::new(u32::MAX, u32::MAX);
+        let from = MazePoint::new(u64::MAX - 2, u64::MAX - 2);
+        let to = MazePoint::new(u64::MAX, u64::MAX);
         let points = get_between_points(&from, &to);
         assert_eq!(points.len(), 9); // 3x3の矩形
 
