@@ -1,4 +1,4 @@
-use rand::RngExt;
+use rand::Rng;
 use std::{
     thread,
     time::{SystemTime, UNIX_EPOCH},
@@ -137,7 +137,7 @@ impl WallIdentifier {
     ///
     /// 1. **重複回避待機**: 5-10ナノ秒のランダムスリープ
     ///    - 同時生成による時刻の重複を回避
-    ///    - `rand::rng()` による乱数生成
+    ///    - `rand::thread_rng()` による真の乱数生成
     /// 2. **スレッドID取得**: `thread::current().id()` で現在スレッドを特定
     /// 3. **時刻取得**: `SystemTime::now()` でナノ秒精度の現在時刻を取得
     /// 4. **構造体構築**: 取得した情報で `WallIdentifier` を構築

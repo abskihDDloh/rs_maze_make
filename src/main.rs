@@ -2,7 +2,7 @@ mod maze;
 mod set_start_and_goal;
 use clap::{Parser, arg, command};
 use log::{LevelFilter, debug, error, info};
-use rand::RngExt;
+use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
     fs,
