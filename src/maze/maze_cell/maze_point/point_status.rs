@@ -81,15 +81,15 @@ impl NewMethodEnforcer {
 ///
 /// # 識別子管理システム
 ///
-/// ## 識別子の有無による分類
-/// | 壁の種類 | 状態 | 識別子 | 意味 |
-/// |----------|------|--------|------|
-/// | StartPoint | NotChecked | なし | 未選択の開始点候補 |
-/// | StartPoint | Extending | あり | 処理中の開始点 |
-/// | JustWall | NotChecked | あり | 固定境界 |
-/// | Pillar | NotChecked | なし | 未処理の柱 |
-/// | Pillar | Extending | あり | 処理中の柱 |
-/// | MazeWall | （固定） | あり | 生成済み壁 |
+/// ## 識別子マップによる分類
+/// | 壁の種類 | 状態 | 識別子マップ | 意味 |
+/// |----------|------|--------------|------|
+/// | StartPoint | NotChecked | 非空 | 境界識別子を持つ開始点候補 |
+/// | StartPoint | Extending | 非空 | 処理中の開始点 |
+/// | JustWall | NotChecked | 非空 | 固定境界 |
+/// | Pillar | NotChecked | 空 | 未処理の柱 |
+/// | Pillar | Extending | 非空 | 処理中の柱 |
+/// | MazeWall | （固定） | 非空 | 生成済み壁 |
 ///
 /// ## 所有権とトレーサビリティ
 /// - **生成元追跡**: どのスレッドが特定の壁を生成したかを記録
@@ -210,17 +210,15 @@ pub enum MazePointStatus {
     ///
     /// # 識別子管理の原則
     ///
-    /// ## 識別子有りの場合（`Some(WallIdentifier)`）
-    /// - **生成元特定**: 特定スレッドによる生成の記録
-    /// - **所有権主張**: 該当スレッドの管理下にある状態
-    /// - **変更権限**: 識別子保持者のみが状態変更可能
+    /// ## 識別子マップが非空の場合
+    /// - **生成元特定**: 生成・関与した識別子集合を保持
+    /// - **所有権追跡**: 該当識別子群の管理下にある状態
     /// - **デバッグ情報**: 生成過程のトレーサビリティ提供
     ///
-    /// ## 識別子無しの場合（`None`）
-    /// - **未割り当て**: どのスレッドにも所有されていない
+    /// ## 識別子マップが空の場合
+    /// - **未割り当て**: どの識別子にも所有されていない
     /// - **処理待ち**: アルゴリズムによる処理を待機中
-    /// - **一時状態**: 後に識別子が割り当てられる予定
-    /// - **開放状態**: 任意のスレッドが処理可能
+    /// - **対象例**: 未チェック柱
     ///
     /// # ライフサイクル
     ///
@@ -267,7 +265,7 @@ impl MazePointStatus {
     ///
     /// # 生成仕様
     ///
-    /// - **状態**: `Path(NewMethodEnforcer)`
+    /// - **状態**: `Path(PathType::NotResolvedPath, NewMethodEnforcer)`
     /// - **識別子**: なし（通路は所有されない）
     /// - **変更可能性**: 後に壁に変換される可能性あり
     /// - **用途**: 迷路の移動可能領域
@@ -350,13 +348,13 @@ impl MazePointStatus {
     /// # 生成仕様
     ///
     /// - **壁種類**: `WallType::Outside(StartPoint, NotChecked)`
-    /// - **識別子**: なし（未選択状態）
+    /// - **識別子**: あり（引数で渡された境界管理用識別子）
     /// - **配置位置**: 境界上の0以外偶数座標
     /// - **用途**: 迷路生成開始点候補
     ///
     /// # 引数
     ///
-    /// * `identifier` - 境界管理用識別子（将来の拡張時に使用）
+    /// * `identifier` - 境界管理用識別子
     ///
     /// # 戻り値
     ///
@@ -403,7 +401,7 @@ impl MazePointStatus {
     ///
     /// # 変換プロセス
     ///
-    /// 1. **入力検証**: 未チェックスタートポイント + 識別子無しの確認
+    /// 1. **入力検証**: `Wall` かつ未チェックスタートポイントであることを確認
     /// 2. **WallType変換**: 内部的な状態変換の実行
     /// 3. **識別子設定**: 処理スレッドの識別子を新規設定
     /// 4. **結果構築**: 拡張中状態のインスタンス生成
@@ -411,9 +409,9 @@ impl MazePointStatus {
     /// # 変換規則
     ///
     /// ```text
-    /// Wall(Outside(StartPoint, NotChecked), None, _)
+    /// Wall(Outside(StartPoint, NotChecked), identifiers, _)
     ///   ↓
-    /// Wall(Outside(StartPoint, Extending), Some(identifier), _)
+    /// Wall(Outside(StartPoint, Extending), identifiers + identifier, _)
     /// ```
     ///
     /// # 引数
@@ -429,7 +427,7 @@ impl MazePointStatus {
     /// # エラー条件
     ///
     /// - 入力が `Wall` バリアント以外
-    /// - 入力の識別子が `None` 以外
+    /// - 入力が `WallType::Outside(StartPoint, NotChecked, ..)` 以外
     /// - 内部 `WallType` 変換の失敗
     /// - 期待される状態組み合わせの不一致
     pub fn new_extending_start_point_from_notchecked_start_point(
@@ -489,7 +487,7 @@ impl MazePointStatus {
     ///
     /// # 変換プロセス
     ///
-    /// 1. **入力検証**: 未チェック柱 + 識別子無しの確認
+    /// 1. **入力検証**: 未チェック柱かつ識別子マップが空であることを確認
     /// 2. **WallType変換**: 柱の拡張状態変換
     /// 3. **識別子設定**: 処理スレッドの識別子を新規設定
     /// 4. **結果構築**: 拡張中状態のインスタンス生成
@@ -497,9 +495,9 @@ impl MazePointStatus {
     /// # 変換規則
     ///
     /// ```text
-    /// Wall(Pillar(NotChecked), None, _)
+    /// Wall(Pillar(NotChecked), {}, _)
     ///   ↓
-    /// Wall(Pillar(Extending), Some(identifier), _)
+    /// Wall(Pillar(Extending), {identifier -> 0}, _)
     /// ```
     ///
     /// # 引数
@@ -515,7 +513,7 @@ impl MazePointStatus {
     /// # エラー条件
     ///
     /// - 入力が `Wall` バリアント以外
-    /// - 入力の識別子が `None` 以外
+    /// - 入力の識別子マップが空でない
     /// - 内部 `WallType` が `Pillar` 以外
     /// - 柱の拡張状態が `NotChecked` 以外
     pub fn new_extending_pillar_from_notchecked_pillar(
@@ -569,12 +567,10 @@ impl MazePointStatus {
     ///
     /// # 戻り値の意味
     ///
-    /// - **`Some(&WallIdentifier)`**: 識別子付き壁の場合
-    ///   - 生成元スレッドが特定可能
-    ///   - 所有権が明確に定義された状態
-    /// - **`None`**: 識別子無し壁または通路の場合
-    ///   - 未処理状態の柱
-    ///   - 通路（識別子を持たない）
+    /// - **`Some(&HashMap<WallIdentifier, usize>)`**: 壁の場合
+    ///   - 識別子マップが空なら未処理状態（例: 未チェック柱）
+    ///   - 非空なら所有権・生成履歴の追跡情報を保持
+    /// - **`None`**: 通路の場合
     ///
     /// # 戻り値
     ///
@@ -797,7 +793,7 @@ impl MazePointStatus {
     /// - 壁である（`is_wall() == true`）
     /// - 柱である（`is_pillar() == true`）
     /// - 拡張状態が `NotChecked`
-    /// - 識別子が `None`
+    /// - 識別子マップが空
     ///
     /// # 戻り値
     ///
@@ -826,7 +822,7 @@ impl MazePointStatus {
     /// 以下の条件を満たす場合に `true`：
     /// - 柱である（`is_pillar() == true`）
     /// - 拡張状態が `Extending`
-    /// - 識別子が `Some(_)`
+    /// - 識別子マップが非空
     ///
     /// # 戻り値
     ///
