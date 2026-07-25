@@ -124,6 +124,24 @@ impl Field {
         }
     }
 
+    pub fn get_available_extending_source_pillars(&self) -> Vec<MazePoint> {
+        self.extending_pillar_points
+            .iter()
+            .filter(|point| !self.get_adjacent_extendable_pillars(point).is_empty())
+            .cloned()
+            .collect()
+    }
+
+    pub fn get_random_available_extending_source_pillar(&self) -> Option<MazePoint> {
+        let available_points = self.get_available_extending_source_pillars();
+        if available_points.is_empty() {
+            None
+        } else {
+            let mut rng = rand::rng();
+            Some(available_points[rng.random_range(0..available_points.len())])
+        }
+    }
+
     pub fn get_adjacent_extendable_pillars(&self, source_point: &MazePoint) -> Vec<MazePoint> {
         let mut adjacent_pillars = source_point.generate_adjacent_maze_points(2);
         // extend_start_pointsに含まれる開始点とextending_pillar_pointsに含まれる柱を除外する。
@@ -332,6 +350,44 @@ impl Field {
             return Ok(true);
         }
         Ok(false)
+    }
+
+    pub(in crate::maze) fn mark_extending_pillar_with_identifier(
+        &mut self,
+        point: &MazePoint,
+        identifier: &WallIdentifier,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if !self.extending_pillar_points.contains(point) {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Point {:?} is not an extending pillar", point),
+            )));
+        }
+
+        if let Some(status) = self.all_maze_points.get(point).cloned() {
+            if !status.is_extending_pillar() {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Point {:?} does not have extending pillar status", point),
+                )));
+            }
+
+            let updated_status = MazePointStatus::add_wall_identifier(status, identifier)
+                .map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Failed to append wall identifier at {:?}: {}", point, e),
+                    )) as Box<dyn std::error::Error + Send + Sync>
+                })?;
+
+            self.all_maze_points.insert(*point, updated_status);
+            Ok(())
+        } else {
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Point {:?} not found", point),
+            )))
+        }
     }
 
     /// 指定した中間点をWall状態に変更します（Path状態のみ）。
