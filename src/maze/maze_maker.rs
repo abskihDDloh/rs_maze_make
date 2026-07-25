@@ -3,7 +3,7 @@ use std::
 ;
 
 use log::{debug, warn};
-use rand::Rng;
+use rand::RngExt;
 
 use crate::maze::{
     maze_cell::{maze_point::point::MazePoint, wall::wall_identifier::WallIdentifier},
@@ -191,8 +191,8 @@ pub(in crate::maze) fn extend_point_to_adjacent_pillar(
         }
 
         // 隣接柱候補からランダムに1つ選択
-        let selected_pillar = adjacent_pillars_candidate
-            [rand::rng().random_range(0..adjacent_pillars_candidate.len())];
+        let mut rng = rand::rng();
+        let selected_pillar = adjacent_pillars_candidate[rng.random_range(0..adjacent_pillars_candidate.len())];
 
         let mut maze_points_write = maze_points.write().map_err(|_| {
             Box::new(std::io::Error::other(format!(

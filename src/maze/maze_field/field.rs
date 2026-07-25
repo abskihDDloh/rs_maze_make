@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use rand::Rng;
+use rand::RngExt;
 
 use crate::maze::{
     maze_cell::{
@@ -99,7 +99,8 @@ impl Field {
         if available_points.is_empty() {
             None
         } else {
-            Some(available_points[rand::rng().random_range(0..available_points.len())])
+            let mut rng = rand::rng();
+            Some(available_points[rng.random_range(0..available_points.len())])
         }
     }
 
@@ -118,7 +119,8 @@ impl Field {
         if available_points.is_empty() {
             None
         } else {
-            Some(available_points[rand::rng().random_range(0..available_points.len())])
+            let mut rng = rand::rng();
+            Some(available_points[rng.random_range(0..available_points.len())])
         }
     }
 
