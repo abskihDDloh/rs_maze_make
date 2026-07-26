@@ -43,6 +43,15 @@ pub(crate) struct Field {
     extend_start_points: HashSet<MazePoint>,
     /// 拡張処理中生成起点の外壁の座標集合
     extending_start_points: HashSet<MazePoint>,
+
+    /// 区画分割数（1以上）
+    partition_count: usize,
+
+    /// 区画ごとの未探索開始点キュー
+    available_start_points_by_partition: Vec<Vec<MazePoint>>,
+
+    /// 区画ごとの拡張可能な柱候補キュー
+    available_extending_pillars_by_partition: Vec<Vec<MazePoint>>,
 }
 
 impl Field {
@@ -92,6 +101,190 @@ impl Field {
 
     pub fn get_extending_start_points_clone(&self) -> HashSet<MazePoint> {
         self.extending_start_points.clone()
+    }
+
+    fn normalized_partition_count(partition_count: usize) -> usize {
+        if partition_count == 0 {
+            1
+        } else {
+            partition_count
+        }
+    }
+
+    fn partition_id_for_point_with_count(&self, point: &MazePoint, partition_count: usize) -> usize {
+        if partition_count <= 1 {
+            return 0;
+        }
+
+        let width = self.x_size as usize;
+        if width <= 1 {
+            return 0;
+        }
+
+        let x = point.x() as usize;
+        if x == 0 {
+            return 0;
+        }
+        if x >= width - 1 {
+            return partition_count - 1;
+        }
+
+        let mut pid = (x * partition_count) / width;
+        if pid >= partition_count {
+            pid = partition_count - 1;
+        }
+        pid
+    }
+
+    fn partition_id_for_point(&self, point: &MazePoint) -> usize {
+        self.partition_id_for_point_with_count(point, self.partition_count)
+    }
+
+    fn point_owned_by_partition(&self, point: &MazePoint, partition_id: usize) -> bool {
+        self.partition_id_for_point(point) == partition_id
+    }
+
+    pub(crate) fn configure_partitions(&mut self, partition_count: usize) {
+        self.partition_count = Self::normalized_partition_count(partition_count);
+        self.rebuild_partition_queues();
+    }
+
+    fn rebuild_partition_queues(&mut self) {
+        self.available_start_points_by_partition = vec![Vec::new(); self.partition_count];
+        self.available_extending_pillars_by_partition = vec![Vec::new(); self.partition_count];
+
+        for point in &self.extend_start_points {
+            if self.extending_start_points.contains(point) {
+                continue;
+            }
+            let partition_id = self.partition_id_for_point(point);
+            self.available_start_points_by_partition[partition_id].push(*point);
+        }
+
+        for point in &self.extending_pillar_points {
+            let partition_id = self.partition_id_for_point(point);
+            self.available_extending_pillars_by_partition[partition_id].push(*point);
+        }
+    }
+
+    fn pop_random_start_point_in_partition(&mut self, partition_id: usize) -> Option<MazePoint> {
+        if partition_id >= self.partition_count {
+            return None;
+        }
+
+        let mut rng = rand::rng();
+        let bucket = &mut self.available_start_points_by_partition[partition_id];
+
+        while !bucket.is_empty() {
+            let idx = rng.random_range(0..bucket.len());
+            let point = bucket.swap_remove(idx);
+
+            if self.extending_start_points.contains(&point) {
+                continue;
+            }
+            if !self.extend_start_points.contains(&point) {
+                continue;
+            }
+
+            if let Some(status) = self.all_maze_points.get(&point)
+                && status.is_not_checked_start_point()
+            {
+                return Some(point);
+            }
+        }
+
+        None
+    }
+
+    fn pop_random_extending_source_pillar_in_partition(
+        &mut self,
+        partition_id: usize,
+    ) -> Option<MazePoint> {
+        if partition_id >= self.partition_count {
+            return None;
+        }
+
+        let mut rng = rand::rng();
+
+        loop {
+            let point = {
+                let bucket = &mut self.available_extending_pillars_by_partition[partition_id];
+                if bucket.is_empty() {
+                    return None;
+                }
+                let idx = rng.random_range(0..bucket.len());
+                bucket.swap_remove(idx)
+            };
+
+            if !self.extending_pillar_points.contains(&point) {
+                continue;
+            }
+
+            if let Some(status) = self.all_maze_points.get(&point)
+                && status.is_extending_pillar()
+                && !self
+                    .get_adjacent_extendable_pillars_for_partition(&point, partition_id)
+                    .is_empty()
+            {
+                return Some(point);
+            }
+        }
+    }
+
+    pub(in crate::maze) fn select_start_source_for_partition(
+        &mut self,
+        partition_id: usize,
+        identifier: &WallIdentifier,
+    ) -> Result<MazePoint, Box<dyn std::error::Error + Send + Sync>> {
+        if partition_id >= self.partition_count {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Invalid partition id {}. partition_count={}.",
+                    partition_id, self.partition_count
+                ),
+            )));
+        }
+
+        loop {
+            if self.all_pillar_seeked_flag() {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "All start points have been sought.",
+                )));
+            }
+
+            if let Some(start_point) = self.pop_random_start_point_in_partition(partition_id) {
+                if self
+                    .mark_start_point_as_extending(&start_point, identifier)
+                    .is_ok()
+                {
+                    return Ok(start_point);
+                }
+                continue;
+            }
+
+            if let Some(source_pillar) =
+                self.pop_random_extending_source_pillar_in_partition(partition_id)
+            {
+                if self
+                    .mark_extending_pillar_with_identifier(&source_pillar, identifier)
+                    .is_ok()
+                {
+                    self.available_extending_pillars_by_partition[partition_id].push(source_pillar);
+                    return Ok(source_pillar);
+                }
+                continue;
+            }
+
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "No available start point or extending pillar source found in partition {}",
+                    partition_id
+                ),
+            )));
+        }
     }
     #[allow(dead_code)]
     pub fn get_random_available_pillar_point(&self) -> Option<MazePoint> {
@@ -150,6 +343,16 @@ impl Field {
                 && !self.extending_pillar_points.contains(point)
                 && self.pillar_points.contains(point)
         });
+        adjacent_pillars
+    }
+
+    pub fn get_adjacent_extendable_pillars_for_partition(
+        &self,
+        source_point: &MazePoint,
+        partition_id: usize,
+    ) -> Vec<MazePoint> {
+        let mut adjacent_pillars = self.get_adjacent_extendable_pillars(source_point);
+        adjacent_pillars.retain(|point| self.point_owned_by_partition(point, partition_id));
         adjacent_pillars
     }
 
@@ -261,6 +464,9 @@ impl Field {
             extending_pillar_points: HashSet::new(),
             extend_start_points,
             extending_start_points: HashSet::new(),
+            partition_count: 1,
+            available_start_points_by_partition: Vec::new(),
+            available_extending_pillars_by_partition: Vec::new(),
         })))
     }
 
@@ -347,6 +553,10 @@ impl Field {
 
             self.all_maze_points.insert(*point, extending_status);
             self.extending_pillar_points.insert(*point);
+            let partition_id = self.partition_id_for_point(point);
+            if partition_id < self.available_extending_pillars_by_partition.len() {
+                self.available_extending_pillars_by_partition[partition_id].push(*point);
+            }
             return Ok(true);
         }
         Ok(false)

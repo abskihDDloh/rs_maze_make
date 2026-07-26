@@ -16,6 +16,7 @@ use crate::maze::{
 
 pub fn maze_generate_thread(
     maze_points: &Arc<RwLock<Field>>,
+    partition_id: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let identifier = WallIdentifier::new();
@@ -41,7 +42,7 @@ pub fn maze_generate_thread(
         let mut point_stack = Vec::new();
 
         // 最初の開始点を取得
-        match select_start_point_any_source(maze_points, identifier) {
+        match select_start_point_any_source(maze_points, partition_id, identifier) {
             Ok(next_point) => {
                 point_stack.push(next_point);
                 debug!("Selected start point: {:?}", next_point);
@@ -65,6 +66,7 @@ pub fn maze_generate_thread(
                 match extend_point_to_adjacent_pillar(
                     maze_points,
                     *current_point, // &MazePoint → MazePoint
+                    partition_id,
                     identifier,     // &WallIdentifier → WallIdentifier
                 ) {
                     Ok(extend_result) => {
@@ -142,7 +144,6 @@ pub fn maze_generate_monitor_thread(
         let (
             x,
             y,
-            _all_maze_points,
             all_start_points,
             extending_start_points,
             all_pillars,
@@ -157,7 +158,6 @@ pub fn maze_generate_monitor_thread(
             (
                 maze_points_read.x_size(),
                 maze_points_read.y_size(),
-                maze_points_read.get_all_maze_points_clone(),
                 maze_points_read.get_extend_start_point_clone().len(),
                 maze_points_read.get_extending_start_points_clone().len(),
                 maze_points_read.get_pillar_points_clone().len(),
@@ -186,8 +186,6 @@ pub fn maze_generate_monitor_thread(
             y,
             duration,
         );
-
-        //info!("\n{}", output_maze_ascii_art(_all_maze_points));
 
         if all_start_point_seeked {
             info!("All start points have been extended. Exiting monitor thread.");

@@ -112,94 +112,29 @@ pub(in crate::maze) fn select_start_point_outside_wall(
 
 pub(in crate::maze) fn select_start_point_any_source(
     maze_points: &Arc<RwLock<Field>>,
+    partition_id: usize,
     identifier: WallIdentifier,
 ) -> Result<MazePoint, Box<dyn std::error::Error + Send + Sync>> {
     let error_msg_common_part = format!(" identifier: {}", identifier.as_str());
 
-    #[derive(Debug, Clone, Copy)]
-    enum StartSourceKind {
-        OutsideStartPoint,
-        ExistingExtendingPillar,
-    }
+    let mut maze_points_write = maze_points.write().map_err(|_| {
+        Box::new(std::io::Error::other(format!(
+            "Failed to acquire write lock. {}",
+            error_msg_common_part
+        ))) as Box<dyn std::error::Error + Send + Sync>
+    })?;
 
-    loop {
-        let maze_points_read = maze_points.read().map_err(|_| {
-            Box::new(std::io::Error::other(format!(
-                "Failed to acquire read lock. {:?}",
-                identifier
-            ))) as Box<dyn std::error::Error + Send + Sync>
-        })?;
-
-        if maze_points_read.all_pillar_seeked_flag() {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "All start points have been sought. {}",
-                    error_msg_common_part
-                ),
-            )));
-        }
-
-        let selected_source = if let Some(start_point) = maze_points_read.get_random_available_start_point() {
-            Some((start_point, StartSourceKind::OutsideStartPoint))
-        } else {
-            maze_points_read
-                .get_random_available_extending_source_pillar()
-                .map(|pillar| (pillar, StartSourceKind::ExistingExtendingPillar))
-        };
-
-        let (source_point, source_kind) = selected_source.ok_or_else(|| {
+    maze_points_write
+        .select_start_source_for_partition(partition_id, &identifier)
+        .map_err(|e| {
             Box::new(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 format!(
-                    "No available start point or extending pillar source found.{}",
-                    error_msg_common_part
+                    "No available start point or extending pillar source found.{} partition:{} err:{}",
+                    error_msg_common_part, partition_id, e
                 ),
             )) as Box<dyn std::error::Error + Send + Sync>
-        })?;
-
-        drop(maze_points_read);
-
-        let mut maze_points_write = maze_points.write().map_err(|_| {
-            Box::new(std::io::Error::other(format!(
-                "Failed to acquire write lock. {}",
-                error_msg_common_part
-            ))) as Box<dyn std::error::Error + Send + Sync>
-        })?;
-
-        if maze_points_write.all_pillar_seeked_flag() {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "All start points have been sought. {}",
-                    error_msg_common_part
-                ),
-            )));
-        }
-
-        let mark_result = match source_kind {
-            StartSourceKind::OutsideStartPoint => {
-                maze_points_write.mark_start_point_as_extending(&source_point, &identifier)
-            }
-            StartSourceKind::ExistingExtendingPillar => maze_points_write
-                .mark_extending_pillar_with_identifier(&source_point, &identifier),
-        };
-
-        match mark_result {
-            Ok(()) => {
-                drop(maze_points_write);
-                return Ok(source_point);
-            }
-            Err(err) => {
-                warn!(
-                    "Failed to mark source point as extending/owned. kind={:?}, point={:?}, err={}",
-                    source_kind, source_point, err
-                );
-                drop(maze_points_write);
-                continue;
-            }
-        }
-    }
+        })
 }
 
 /// 柱または外壁開始点（Extending状態）から隣接する柱への拡張を試みます。
@@ -243,6 +178,7 @@ pub(in crate::maze) fn select_start_point_any_source(
 pub(in crate::maze) fn extend_point_to_adjacent_pillar(
     maze_points: &Arc<RwLock<Field>>,
     source_point: MazePoint,
+    partition_id: usize,
     identifier: WallIdentifier,
 ) -> Result<ExtendResult, Box<dyn std::error::Error + Send + Sync>> {
     let error_msg_common_part = format!(
@@ -250,76 +186,48 @@ pub(in crate::maze) fn extend_point_to_adjacent_pillar(
         identifier.as_str(),
         source_point
     );
-    loop {
+    let mut maze_points_write = maze_points.write().map_err(|_| {
+        Box::new(std::io::Error::other(format!(
+            "Failed to acquire write lock. {}",
+            error_msg_common_part
+        ))) as Box<dyn std::error::Error + Send + Sync>
+    })?;
+
+    if maze_points_write.all_pillar_seeked_flag() {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "All start points have been sought. {}",
+                error_msg_common_part
+            ),
+        )));
+    }
+
+    let adjacent_pillars_candidate =
+        maze_points_write.get_adjacent_extendable_pillars_for_partition(&source_point, partition_id);
+
+    if adjacent_pillars_candidate.is_empty() {
         debug!(
-            "Attempting to extend point:  with identifier {}",
+            "adjacent pillars not found. return. {}",
             error_msg_common_part
         );
+        return Ok(ExtendResult::new_extending_pillar());
+    }
 
-        let maze_points_read = maze_points.read().map_err(|_| {
-            Box::new(std::io::Error::other(format!(
-                "Failed to acquire read lock. {:?}",
-                identifier
-            ))) as Box<dyn std::error::Error + Send + Sync>
-        })?;
-        if maze_points_read.all_pillar_seeked_flag() {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "All start points have been sought. {}",
-                    error_msg_common_part
-                ),
-            )));
+    let mut rng = rand::rng();
+    let selected_pillar =
+        adjacent_pillars_candidate[rng.random_range(0..adjacent_pillars_candidate.len())];
+
+    let result = maze_points_write.execute_pillar_extension(&source_point, &selected_pillar, &identifier);
+
+    match result {
+        Err(e) => {
+            warn!("Error occurred: {}", e);
+            Err(e)
         }
-        let adjacent_pillars_candidate =
-            maze_points_read.get_adjacent_extendable_pillars(&source_point);
-        drop(maze_points_read);
-
-        if adjacent_pillars_candidate.is_empty() {
-            debug!(
-                "adjacent pillars not found. return. {}",
-                error_msg_common_part
-            );
-            return Ok(ExtendResult::new_extending_pillar()); // 利用可能な隣接柱がない場合は拡張不能。
-        }
-
-        // 隣接柱候補からランダムに1つ選択
-        let mut rng = rand::rng();
-        let selected_pillar = adjacent_pillars_candidate[rng.random_range(0..adjacent_pillars_candidate.len())];
-
-        let mut maze_points_write = maze_points.write().map_err(|_| {
-            Box::new(std::io::Error::other(format!(
-                "Failed to acquire write lock. {}",
-                error_msg_common_part
-            ))) as Box<dyn std::error::Error + Send + Sync>
-        })?;
-        if maze_points_write.all_pillar_seeked_flag() {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "All start points have been sought. {}",
-                    error_msg_common_part
-                ),
-            )));
-        }
-        let result = maze_points_write.execute_pillar_extension(
-            &source_point,
-            &selected_pillar,
-            &identifier,
-        );
-        // エラーの場合は再試行
-        match result {
-            Err(e) => {
-                drop(maze_points_write); // 書き込みロックを解放
-                warn!("Error occurred: {}", e);
-                continue;
-            }
-            _ => {
-                drop(maze_points_write); // 書き込みロックを解放
-                let r = result.unwrap();
-                debug!("extend_status: {:?} {}", r, error_msg_common_part);
-                return Ok(r);
-            }
+        Ok(r) => {
+            debug!("extend_status: {:?} {}", r, error_msg_common_part);
+            Ok(r)
         }
     }
 }
