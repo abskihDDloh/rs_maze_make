@@ -80,9 +80,6 @@ pub struct MazePoint {
 }
 
 impl MazePoint {
-    fn default() -> Self {
-        MazePoint { x: 0, y: 0 }
-    }
     /// 新しい迷路座標点を作成します
     ///
     /// 指定されたX、Y座標で新しい `MazePoint` インスタンスを生成します。

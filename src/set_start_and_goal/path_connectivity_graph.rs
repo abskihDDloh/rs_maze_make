@@ -16,14 +16,6 @@ pub struct PathConnectivityGraph {
 }
 
 impl PathConnectivityGraph {
-    fn default() -> Self {
-        PathConnectivityGraph {
-            graph: UnGraph::new_undirected(),
-            node_to_point: HashMap::new(),
-            point_to_node: HashMap::new(),
-        }
-    }
-
     pub fn build_from_maze_points(
         maze_points: &HashMap<MazePoint, MazePointStatus>,
     ) -> Result<Self, Box<dyn std::error::Error>> {

@@ -178,7 +178,6 @@ pub(in crate::maze) fn select_start_point_any_source(
 pub(in crate::maze) fn extend_point_to_adjacent_pillar(
     maze_points: &Arc<RwLock<Field>>,
     source_point: MazePoint,
-    partition_id: usize,
     identifier: WallIdentifier,
 ) -> Result<ExtendResult, Box<dyn std::error::Error + Send + Sync>> {
     let error_msg_common_part = format!(
@@ -203,8 +202,11 @@ pub(in crate::maze) fn extend_point_to_adjacent_pillar(
         )));
     }
 
+    let source_partition_id = maze_points_write.partition_id_of_point(&source_point);
+
     let adjacent_pillars_candidate =
-        maze_points_write.get_adjacent_extendable_pillars_for_partition(&source_point, partition_id);
+        maze_points_write
+            .get_adjacent_extendable_pillars_for_partition(&source_point, source_partition_id);
 
     if adjacent_pillars_candidate.is_empty() {
         debug!(

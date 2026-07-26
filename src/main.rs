@@ -89,6 +89,7 @@ fn make_maze(
     let worker_threads_u32 = std::cmp::min(std::cmp::min(max_threads, get_workers_limit()), 64)
         .max(1);
     let worker_threads: usize = worker_threads_u32.try_into().unwrap_or(4);
+    let partition_count = (worker_threads.saturating_mul(8)).min(256).max(worker_threads);
     let pool_size = worker_threads + 1; // +1 は監視スレッド
 
     {
@@ -96,7 +97,7 @@ fn make_maze(
             Box::new(std::io::Error::other("Failed to acquire write lock when configuring partitions"))
                 as Box<dyn std::error::Error>
         })?;
-        maze_points_write.configure_partitions(worker_threads);
+        maze_points_write.configure_partitions(partition_count);
     }
 
     let pool = ThreadPool::new(pool_size);
@@ -132,7 +133,7 @@ fn make_maze(
         pool.execute(move || {
             info!("Starting maze generation thread {}", thread_id);
 
-            match maze_generate_thread(&maze_points_clone, thread_id) {
+            match maze_generate_thread(&maze_points_clone, thread_id, worker_threads) {
                 Ok(()) => {
                     info!(
                         "Maze generation thread {} completed successfully",
