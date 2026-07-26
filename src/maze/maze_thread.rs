@@ -16,7 +16,27 @@ use crate::maze::{
 
 pub fn maze_generate_thread(
     maze_points: &Arc<RwLock<Field>>,
+    thread_id: usize,
+    worker_threads: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let partition_count = {
+        let maze_points_read = maze_points.read().map_err(|_| {
+            Box::new(std::io::Error::other("Failed to acquire read lock for partition_count"))
+                as Box<dyn std::error::Error>
+        })?;
+        maze_points_read.partition_count()
+    };
+
+    let owned_partitions: Vec<usize> = (0..partition_count)
+        .filter(|pid| pid % worker_threads == thread_id)
+        .collect();
+
+    if owned_partitions.is_empty() {
+        return Ok(());
+    }
+
+    let mut partition_cursor = 0usize;
+
     loop {
         let identifier = WallIdentifier::new();
 
@@ -41,19 +61,32 @@ pub fn maze_generate_thread(
         let mut point_stack = Vec::new();
 
         // 最初の開始点を取得
-        match select_start_point_any_source(maze_points, identifier) {
-            Ok(next_point) => {
-                point_stack.push(next_point);
-                debug!("Selected start point: {:?}", next_point);
-            }
-            Err(err) => {
-                debug!(
-                    "Failed to select start pillar point. Pillars: {:?} {:?} {:?}",
-                    identifier, point_stack, err
-                );
-                continue;
+        let mut selected_start_point = None;
+        for offset in 0..owned_partitions.len() {
+            let idx = (partition_cursor + offset) % owned_partitions.len();
+            let partition_id = owned_partitions[idx];
+            match select_start_point_any_source(maze_points, partition_id, identifier) {
+                Ok(next_point) => {
+                    selected_start_point = Some(next_point);
+                    partition_cursor = (idx + 1) % owned_partitions.len();
+                    break;
+                }
+                Err(_err) => {
+                    continue;
+                }
             }
         }
+
+        let Some(next_point) = selected_start_point else {
+            debug!(
+                "No available start point in owned partitions. thread_id={} owned_partitions={:?}",
+                thread_id, owned_partitions
+            );
+            continue;
+        };
+        point_stack.push(next_point);
+        debug!("Selected start point: {:?}", next_point);
+
         loop {
             // point_stackの最後の要素を取得する。
             debug!(
@@ -142,7 +175,6 @@ pub fn maze_generate_monitor_thread(
         let (
             x,
             y,
-            _all_maze_points,
             all_start_points,
             extending_start_points,
             all_pillars,
@@ -157,7 +189,6 @@ pub fn maze_generate_monitor_thread(
             (
                 maze_points_read.x_size(),
                 maze_points_read.y_size(),
-                maze_points_read.get_all_maze_points_clone(),
                 maze_points_read.get_extend_start_point_clone().len(),
                 maze_points_read.get_extending_start_points_clone().len(),
                 maze_points_read.get_pillar_points_clone().len(),
@@ -186,8 +217,6 @@ pub fn maze_generate_monitor_thread(
             y,
             duration,
         );
-
-        //info!("\n{}", output_maze_ascii_art(_all_maze_points));
 
         if all_start_point_seeked {
             info!("All start points have been extended. Exiting monitor thread.");

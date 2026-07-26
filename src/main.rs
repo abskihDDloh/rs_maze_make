@@ -1,6 +1,6 @@
 mod maze;
 mod set_start_and_goal;
-use clap::{Parser, arg, command};
+use clap::Parser;
 use log::{LevelFilter, debug, error, info};
 use rand::RngExt;
 use std::{
@@ -86,15 +86,24 @@ fn make_maze(
     let maze_points = Field::initialize_maze_points(x_size, y_size)?;
 
     info!("Maze initialized with size {}x{}", x_size, y_size);
-    let num_threads_u32_i = std::cmp::min(max_threads, get_workers_limit()) + 1; // 監視スレッド用に+1
-    let num_threads_u32 = std::cmp::min(num_threads_u32_i, 64); // 最大64まで
-    //u32をusizeに変換。変換できない場合は警告を
-    let num_threads: usize = num_threads_u32.try_into().unwrap_or(4);
+    let worker_threads_u32 = std::cmp::min(std::cmp::min(max_threads, get_workers_limit()), 64)
+        .max(1);
+    let worker_threads: usize = worker_threads_u32.try_into().unwrap_or(4);
+    let partition_count = (worker_threads.saturating_mul(8)).min(256).max(worker_threads);
+    let pool_size = worker_threads + 1; // +1 は監視スレッド
 
-    let pool = ThreadPool::new(num_threads);
+    {
+        let mut maze_points_write = maze_points.write().map_err(|_| {
+            Box::new(std::io::Error::other("Failed to acquire write lock when configuring partitions"))
+                as Box<dyn std::error::Error>
+        })?;
+        maze_points_write.configure_partitions(partition_count);
+    }
+
+    let pool = ThreadPool::new(pool_size);
     info!(
         "ThreadPool created with {} threads (+ 1 monitor thread)",
-        num_threads
+        worker_threads
     );
 
     // 監視スレッドを追加
@@ -118,13 +127,13 @@ fn make_maze(
     }
 
     // 迷路生成スレッドを追加
-    for thread_id in 0..num_threads {
+    for thread_id in 0..worker_threads {
         let maze_points_clone = Arc::clone(&maze_points);
 
         pool.execute(move || {
             info!("Starting maze generation thread {}", thread_id);
 
-            match maze_generate_thread(&maze_points_clone) {
+            match maze_generate_thread(&maze_points_clone, thread_id, worker_threads) {
                 Ok(()) => {
                     info!(
                         "Maze generation thread {} completed successfully",
